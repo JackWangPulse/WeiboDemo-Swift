@@ -13,11 +13,14 @@ final class FeedLayoutEngineTests: XCTestCase {
             startsOnMain.append(Thread.isMainThread)
         })
 
-        let first = try await engine.layout(item: item, parsedBody: parsed, parsedRepost: nil, environment: environment())
-        let second = try await engine.layout(item: item, parsedBody: parsed, parsedRepost: nil, environment: environment())
+        let identity = contentIdentity(for: item)
+        let first = try await engine.layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: nil, environment: environment())
+        let second = try await engine.layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: nil, environment: environment())
 
         XCTAssertEqual(first.height, second.height, accuracy: 0.001)
-        XCTAssertEqual(first.height, 148, accuracy: 0.001)
+        XCTAssertEqual(first.height, 160, accuracy: 0.001)
+        XCTAssertEqual(first.identity.content, identity)
+        XCTAssertEqual(first.profile.regions.map(\.action), [.user("1")])
         XCTAssertEqual(first.body.bounds, second.body.bounds)
         XCTAssertEqual(first.body.storage.origins, second.body.storage.origins)
         XCTAssertEqual(startsOnMain.values, [false, false])
@@ -28,7 +31,7 @@ final class FeedLayoutEngineTests: XCTestCase {
         let item = try makeItem(text: "Hi @alice #Swift# https://example.com")
         let parsed = FeedTextParser().parse(item.text)
         let layout = try await FeedLayoutEngine().layout(
-            item: item, parsedBody: parsed, parsedRepost: nil, environment: environment()
+            identity: contentIdentity(for: item), item: item, parsedBody: parsed, parsedRepost: nil, environment: environment()
         )
 
         XCTAssertEqual(layout.body.regions.map(\.action), [
@@ -40,14 +43,17 @@ final class FeedLayoutEngineTests: XCTestCase {
     }
 
     func testLongBodyTruncatesAndAddsExpandRegion() async throws {
-        let item = try makeItem(text: String(repeating: "A long sentence that wraps. ", count: 20))
+        let item = try makeItem(text: String(repeating: "👨‍👩‍👧‍👦 中文长句会换行。", count: 30) + " https://hidden.example.com")
         let layout = try await FeedLayoutEngine().layout(
-            item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: nil, environment: environment()
+            identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: nil, environment: environment()
         )
 
         XCTAssertEqual(layout.body.storage.lines.count, 6)
         XCTAssertEqual(layout.body.regions.last?.action, .expand(item.id))
         XCTAssertFalse(layout.body.regions.last?.rects.isEmpty ?? true)
+        XCTAssertFalse(layout.body.regions.contains { $0.action == .url(URL(string: "https://hidden.example.com")!) })
+        let expandRect = try XCTUnwrap(layout.body.regions.last?.rects.first)
+        XCTAssertTrue(layout.body.bounds.contains(expandRect))
         assertFinite(layout)
     }
 
@@ -55,7 +61,7 @@ final class FeedLayoutEngineTests: XCTestCase {
         let item = try makeItem(text: "Original", repostText: "Reposted @bob", repostPictures: 4)
         let repost = try XCTUnwrap(item.repost)
         let layout = try await FeedLayoutEngine().layout(
-            item: item,
+            identity: contentIdentity(for: item), item: item,
             parsedBody: FeedTextParser().parse(item.text),
             parsedRepost: FeedTextParser().parse(repost.text),
             environment: environment()
@@ -74,7 +80,7 @@ final class FeedLayoutEngineTests: XCTestCase {
         for count in [1, 4, 9] {
             let item = try makeItem(text: "Pictures", pictures: count)
             let layout = try await engine.layout(
-                item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: nil, environment: environment()
+                identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: nil, environment: environment()
             )
             XCTAssertEqual(layout.mediaFrames.count, count)
             let expectedColumns = count == 1 ? 1 : (count == 4 ? 2 : 3)
@@ -96,12 +102,18 @@ final class FeedLayoutEngineTests: XCTestCase {
         let secondParsed = FeedTextParser().parse(item.text)
         let cancelledParsed = FeedTextParser().parse(item.text)
         let layoutEnvironment = environment()
-        let first = Task { try await engine.layout(item: item, parsedBody: firstParsed, parsedRepost: nil, environment: layoutEnvironment) }
-        let second = Task { try await engine.layout(item: item, parsedBody: secondParsed, parsedRepost: nil, environment: layoutEnvironment) }
+        let itemIdentity = contentIdentity(for: item)
+        let first = Task { try await engine.layout(identity: itemIdentity, item: item, parsedBody: firstParsed, parsedRepost: nil, environment: layoutEnvironment) }
+        let second = Task { try await engine.layout(identity: itemIdentity, item: item, parsedBody: secondParsed, parsedRepost: nil, environment: layoutEnvironment) }
         XCTAssertEqual(started.wait(timeout: .now() + 2), .success)
         XCTAssertEqual(started.wait(timeout: .now() + 2), .success)
-        let cancelled = Task { try await engine.layout(item: item, parsedBody: cancelledParsed, parsedRepost: nil, environment: layoutEnvironment) }
+        let cancelled = Task { try await engine.layout(identity: itemIdentity, item: item, parsedBody: cancelledParsed, parsedRepost: nil, environment: layoutEnvironment) }
         cancelled.cancel()
+        let cancelledPromptly = expectation(description: "queued cancellation resumes")
+        Task {
+            do { _ = try await cancelled.value } catch is CancellationError { cancelledPromptly.fulfill() } catch {}
+        }
+        await fulfillment(of: [cancelledPromptly], timeout: 1)
         gate.signal(); gate.signal()
 
         _ = try await first.value
@@ -110,6 +122,34 @@ final class FeedLayoutEngineTests: XCTestCase {
             _ = try await cancelled.value
             XCTFail("Expected cancellation")
         } catch is CancellationError {}
+    }
+
+    func testProfileCardTagAndRepostCardHaveCompleteContainedGeometry() async throws {
+        let item = try makeRichItem()
+        let repost = try XCTUnwrap(item.repost)
+        let identity = contentIdentity(for: item, version: 9)
+        let layout = try await FeedLayoutEngine().layout(
+            identity: identity,
+            item: item,
+            parsedBody: FeedTextParser().parse(item.text),
+            parsedRepost: FeedTextParser().parse(repost.text),
+            environment: environment()
+        )
+
+        XCTAssertEqual(layout.identity.content, identity)
+        XCTAssertTrue(layout.profile.frame.contains(layout.profile.avatarFrame))
+        XCTAssertTrue(layout.profile.frame.contains(layout.profile.name.bounds))
+        XCTAssertEqual(layout.profile.regions.map(\.action), [.user("1")])
+        let card = try XCTUnwrap(layout.card)
+        XCTAssertTrue(card.frame.contains(card.text.bounds))
+        XCTAssertTrue(card.imageFrame.map(card.frame.contains) ?? false)
+        XCTAssertEqual(card.regions.map(\.action), [.url(URL(string: "https://example.com/card")!)])
+        let tag = try XCTUnwrap(layout.tag)
+        XCTAssertTrue(tag.frame.contains(tag.text.bounds))
+        XCTAssertEqual(tag.regions.map(\.action), [.tag("Swift")])
+        let repostCard = try XCTUnwrap(layout.repost?.card)
+        XCTAssertTrue(try XCTUnwrap(layout.repost).frame.contains(repostCard.frame))
+        assertFinite(layout)
     }
     func testLayoutEnvironmentUsesPixelWidthAndStableContentSizeName() {
         let environment = FeedLayoutEnvironment(
@@ -180,10 +220,12 @@ final class FeedLayoutEngineTests: XCTestCase {
         let layout = FeedItemLayout(
             identity: identity(id: "finite"),
             height: 160,
+            profile: emptyProfile(),
             body: body,
-            avatarFrame: CGRect(x: 12, y: 12, width: 40, height: 40),
             mediaFrames: [CGRect(x: 12, y: 100, width: 48, height: 48)],
             repost: nil,
+            card: nil,
+            tag: nil,
             toolbar: ToolbarLayout(frame: CGRect(x: 0, y: 148, width: 300, height: 12), regions: [])
         )
 
@@ -220,12 +262,23 @@ final class FeedLayoutEngineTests: XCTestCase {
         FeedItemLayout(
             identity: identity,
             height: 1,
+            profile: emptyProfile(),
             body: TextLayout(storage: CoreTextLayoutStorage(lines: [], origins: []), bounds: .zero, regions: []),
-            avatarFrame: .zero,
             mediaFrames: [],
             repost: nil,
+            card: nil,
+            tag: nil,
             toolbar: ToolbarLayout(frame: .zero, regions: [])
         )
+    }
+
+    private func contentIdentity(for item: FeedItem, version: UInt = 1) -> FeedContentIdentity {
+        FeedContentIdentity(itemID: item.id, contentVersion: version)
+    }
+
+    private func emptyProfile() -> ProfileLayout {
+        let text = TextLayout(storage: CoreTextLayoutStorage(lines: [], origins: []), bounds: .zero, regions: [])
+        return ProfileLayout(frame: .zero, avatarFrame: .zero, name: text, source: text, regions: [])
     }
 
     private func makeItem(text: String, pictures: Int = 0, repostText: String? = nil, repostPictures: Int = 0) throws -> FeedItem {
@@ -237,6 +290,11 @@ final class FeedLayoutEngineTests: XCTestCase {
         } ?? ""
         let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
         let json = "{\"id\":\"item\",\"user\":{\"id\":\"1\",\"name\":\"Alice\"},\"text\":\"\(escaped)\",\"pics\":[\(pictureJSON(pictures))]\(repost)}"
+        return try JSONDecoder.weibo.decode(FeedItem.self, from: Data(json.utf8))
+    }
+
+    private func makeRichItem() throws -> FeedItem {
+        let json = #"{"id":"item","user":{"id":"1","name":"Alice"},"text":"Body","page_info":{"page_title":"Main card","page_pic":"https://example.com/main.jpg","page_url":"https://example.com/card"},"tag_struct":[{"tag_name":"Swift"}],"retweeted_status":{"id":"repost","user":{"id":"2","name":"Bob"},"text":"Repost","page_info":{"page_title":"Repost card","page_url":"https://example.com/repost"}}}"#
         return try JSONDecoder.weibo.decode(FeedItem.self, from: Data(json.utf8))
     }
 

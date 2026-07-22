@@ -18,81 +18,90 @@ public final class FeedLayoutEngine: @unchecked Sendable {
     }
 
     public func layout(
+        identity: FeedContentIdentity,
         item: FeedItem,
         parsedBody: ParsedFeedText,
         parsedRepost: ParsedFeedText?,
         environment: FeedLayoutEnvironment
     ) async throws -> FeedItemLayout {
         try Task.checkCancellation()
-        let operation = BlockOperation()
+        let cancellation = LayoutCancellation()
+        let completion = LayoutCompletion<FeedItemLayout>()
+        let operation = BlockOperation { [layoutStartHook] in
+            guard !cancellation.isCancelled else { return }
+            layoutStartHook?()
+            do {
+                let result = try Self.compute(
+                    item: item,
+                    identity: identity,
+                    parsedBody: parsedBody,
+                    parsedRepost: parsedRepost,
+                    environment: environment,
+                    cancellation: cancellation
+                )
+                completion.resume(.success(result))
+            } catch {
+                completion.resume(.failure(error))
+            }
+        }
         return try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { continuation in
-                operation.addExecutionBlock { [layoutStartHook] in
-                    guard !operation.isCancelled else {
-                        continuation.resume(throwing: CancellationError())
-                        return
-                    }
-                    layoutStartHook?()
-                    do {
-                        try Self.checkCancellation(operation)
-                        let result = try Self.compute(
-                            item: item,
-                            parsedBody: parsedBody,
-                            parsedRepost: parsedRepost,
-                            environment: environment,
-                            operation: operation
-                        )
-                        try Self.checkCancellation(operation)
-                        continuation.resume(returning: result)
-                    } catch {
-                        continuation.resume(throwing: error)
-                    }
-                }
+                completion.install(continuation)
                 queue.addOperation(operation)
             }
         } onCancel: {
+            cancellation.cancel()
             operation.cancel()
+            completion.resume(.failure(CancellationError()))
         }
     }
 
     private static func compute(
         item: FeedItem,
+        identity: FeedContentIdentity,
         parsedBody: ParsedFeedText,
         parsedRepost: ParsedFeedText?,
         environment: FeedLayoutEnvironment,
-        operation: Operation
+        cancellation: LayoutCancellation
     ) throws -> FeedItemLayout {
         precondition(!Thread.isMainThread, "Feed layout must never run on the main thread")
-        try checkCancellation(operation)
+        try checkCancellation(cancellation)
         let scale = CGFloat(max(environment.displayScale, 1))
         let width = CGFloat(environment.containerPixelWidth) / scale
         let inset: CGFloat = 12
         let contentWidth = max(0, width - inset * 2)
         let bodyX: CGFloat = 64
         let bodyWidth = max(0, width - bodyX - inset)
-        var cursor: CGFloat = 64
-        let body = try makeTextLayout(parsedBody, x: bodyX, y: cursor, width: bodyWidth, itemID: item.id, operation: operation)
+        let profile = try makeProfileLayout(item: item, width: width, cancellation: cancellation)
+        var cursor: CGFloat = profile.frame.maxY + 12
+        let body = try makeTextLayout(parsedBody, x: bodyX, y: cursor, width: bodyWidth, itemID: item.id, cancellation: cancellation)
         cursor = body.bounds.maxY + 12
 
-        try checkCancellation(operation)
+        try checkCancellation(cancellation)
         let media = mediaFrames(count: item.pictures.count, x: inset, y: cursor, availableWidth: contentWidth)
         if let last = media.last { cursor = last.maxY + 12 }
 
         var repostLayout: RepostLayout?
         if let repost = item.repost, let parsedRepost {
             let repostTop = cursor
-            let repostBody = try makeTextLayout(parsedRepost, x: 24, y: repostTop + 12, width: max(0, width - 48), itemID: repost.id, operation: operation)
+            let repostBody = try makeTextLayout(parsedRepost, x: 24, y: repostTop + 12, width: max(0, width - 48), itemID: repost.id, cancellation: cancellation)
             var repostBottom = repostBody.bounds.maxY + 12
             let repostMedia = mediaFrames(count: repost.pictures.count, x: 24, y: repostBottom, availableWidth: max(0, width - 48))
             if let last = repostMedia.last { repostBottom = last.maxY + 12 }
+            let repostCard = try repost.card.map {
+                try makeCardLayout($0, x: 24, y: repostBottom, width: max(0, width - 48), cancellation: cancellation)
+            }
+            if let repostCard { repostBottom = repostCard.frame.maxY + 12 }
             let frame = CGRect(x: inset, y: repostTop, width: contentWidth, height: repostBottom - repostTop)
-            repostLayout = RepostLayout(frame: frame, body: repostBody, mediaFrames: repostMedia)
+            repostLayout = RepostLayout(frame: frame, body: repostBody, mediaFrames: repostMedia, card: repostCard)
             cursor = frame.maxY + 12
         }
 
-        if item.card != nil { cursor += 68 }
-        if !item.tags.isEmpty { cursor += 32 }
-        try checkCancellation(operation)
+        let card = try item.card.map { try makeCardLayout($0, x: inset, y: cursor, width: contentWidth, cancellation: cancellation) }
+        if let card { cursor = card.frame.maxY + 12 }
+        let tag = try item.tags.first.map { try makeTagLayout($0, x: inset, y: cursor, width: contentWidth, cancellation: cancellation) }
+        if let tag { cursor = tag.frame.maxY + 12 }
+        try checkCancellation(cancellation)
         let toolbarFrame = CGRect(x: 0, y: cursor, width: width, height: 44)
         let sectionWidth = width / 3
         let actions: [(FeedAction, String)] = [(.repost, "Repost"), (.comment, "Comment"), (.like, "Like")]
@@ -104,16 +113,57 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             )
         }
         let height = toolbarFrame.maxY + 8
-        try checkCancellation(operation)
+        try checkCancellation(cancellation)
         return FeedItemLayout(
-            identity: FeedLayoutIdentity(content: .init(itemID: item.id, contentVersion: 1), environment: environment),
+            identity: FeedLayoutIdentity(content: identity, environment: environment),
             height: height,
+            profile: profile,
             body: body,
-            avatarFrame: CGRect(x: inset, y: 12, width: 40, height: 40),
             mediaFrames: media,
             repost: repostLayout,
+            card: card,
+            tag: tag,
             toolbar: ToolbarLayout(frame: toolbarFrame, regions: toolbarRegions)
         )
+    }
+
+    private static func makeProfileLayout(item: FeedItem, width: CGFloat, cancellation: LayoutCancellation) throws -> ProfileLayout {
+        try checkCancellation(cancellation)
+        let frame = CGRect(x: 0, y: 0, width: width, height: 64)
+        let avatar = CGRect(x: 12, y: 12, width: 40, height: 40)
+        let name = makeSingleLineText(item.user.name, x: 64, y: 12, width: max(0, width - 76), color: .label)
+        let source = makeSingleLineText("Weibo", x: 64, y: 34, width: max(0, width - 76), color: .secondaryLabel, fontSize: 12)
+        return ProfileLayout(
+            frame: frame,
+            avatarFrame: avatar,
+            name: name,
+            source: source,
+            regions: [InteractionRegion(rects: [avatar, name.bounds], action: .user(item.user.id.rawValue), accessibilityLabel: item.user.name)]
+        )
+    }
+
+    private static func makeCardLayout(_ card: FeedCard, x: CGFloat, y: CGFloat, width: CGFloat, cancellation: LayoutCancellation) throws -> CardLayout {
+        try checkCancellation(cancellation)
+        let frame = CGRect(x: x, y: y, width: width, height: 64)
+        let imageFrame = card.imageURL == nil ? nil : CGRect(x: x, y: y, width: 64, height: 64)
+        let textX = imageFrame?.maxX.advanced(by: 8) ?? x + 8
+        let title = card.title ?? card.description ?? "Link"
+        let text = makeSingleLineText(title, x: textX, y: y + 22, width: max(0, frame.maxX - textX - 8), color: .label)
+        let regions = card.targetURL.map { [InteractionRegion(rects: [frame], action: .url($0), accessibilityLabel: title)] } ?? []
+        return CardLayout(frame: frame, imageFrame: imageFrame, text: text, regions: regions)
+    }
+
+    private static func makeTagLayout(_ tag: FeedTag, x: CGFloat, y: CGFloat, width: CGFloat, cancellation: LayoutCancellation) throws -> TagLayout {
+        try checkCancellation(cancellation)
+        let frame = CGRect(x: x, y: y, width: width, height: 28)
+        let text = makeSingleLineText(tag.name, x: x + 8, y: y + 4, width: max(0, width - 16), color: .systemBlue)
+        return TagLayout(frame: frame, text: text, regions: [InteractionRegion(rects: [frame], action: .tag(tag.name), accessibilityLabel: tag.name)])
+    }
+
+    private static func makeSingleLineText(_ value: String, x: CGFloat, y: CGFloat, width: CGFloat, color: UIColor, fontSize: CGFloat = 16) -> TextLayout {
+        let attributed = NSAttributedString(string: value, attributes: [.font: UIFont.systemFont(ofSize: fontSize), .foregroundColor: color])
+        let line = CTLineCreateWithAttributedString(attributed)
+        return TextLayout(storage: CoreTextLayoutStorage(lines: [line], origins: [CGPoint(x: x, y: y + 16)]), bounds: CGRect(x: x, y: y, width: width, height: 20), regions: [])
     }
 
     private static func makeTextLayout(
@@ -122,9 +172,9 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         y: CGFloat,
         width: CGFloat,
         itemID: FeedID,
-        operation: Operation
+        cancellation: LayoutCancellation
     ) throws -> TextLayout {
-        try checkCancellation(operation)
+        try checkCancellation(cancellation)
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = 20
         paragraph.maximumLineHeight = 20
@@ -137,7 +187,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let range = NSRange(span.range, in: parsed.source)
             text.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: range)
         }
-        try checkCancellation(operation)
+        try checkCancellation(cancellation)
         let typesetter = CTTypesetterCreateWithAttributedString(text)
         var lines = [CTLine]()
         var origins = [CGPoint]()
@@ -146,7 +196,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let length = text.length
         let maximumLines = 6
         while index < length && lines.count < maximumLines {
-            try checkCancellation(operation)
+            try checkCancellation(cancellation)
             let count = max(1, CTTypesetterSuggestLineBreak(typesetter, index, Double(width)))
             let range = CFRange(location: index, length: min(count, length - index))
             lines.append(CTTypesetterCreateLine(typesetter, range))
@@ -155,31 +205,46 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             index += range.length
         }
         let truncated = index < length
-        if truncated, let finalLine = lines.last {
+        var visibleUTF16End = length
+        var expandRect: CGRect?
+        if truncated, let finalLine = lines.last, let origin = origins.last {
             let token = NSAttributedString(
                 string: "… More",
                 attributes: [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor.systemBlue]
             )
             let tokenLine = CTLineCreateWithAttributedString(token)
+            let tokenWidth = CGFloat(CTLineGetTypographicBounds(tokenLine, nil, nil, nil))
+            let visibleWidth = max(0, width - tokenWidth)
+            let visibleIndex = CTLineGetStringIndexForPosition(finalLine, CGPoint(x: visibleWidth, y: 0))
+            visibleUTF16End = max(ranges.last?.location ?? 0, visibleIndex)
+            if let lastRange = ranges.indices.last {
+                ranges[lastRange].length = visibleUTF16End - ranges[lastRange].location
+            }
             lines[lines.count - 1] = CTLineCreateTruncatedLine(finalLine, Double(width), .end, tokenLine) ?? finalLine
+            expandRect = CGRect(x: boundsX(x, width: width, tokenWidth: tokenWidth), y: origin.y - 16, width: tokenWidth, height: 20)
         }
         let bounds = CGRect(x: x, y: y, width: width, height: CGFloat(lines.count) * 20)
         var regions = parsed.spans.compactMap { span -> InteractionRegion? in
             guard let action = span.action else { return nil }
             let semanticRange = NSRange(span.range, in: parsed.source)
-            let rects = interactionRects(for: semanticRange, lineRanges: ranges, lines: lines, origins: origins)
+            let clipped = NSIntersectionRange(semanticRange, NSRange(location: 0, length: visibleUTF16End))
+            guard clipped.length > 0 else { return nil }
+            let rects = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins)
             guard !rects.isEmpty else { return nil }
             return InteractionRegion(rects: rects, action: action, accessibilityLabel: String(parsed.source[span.range]))
         }
-        if truncated, let line = lines.last, let origin = origins.last {
-            let lineWidth = CGFloat(CTLineGetTypographicBounds(line, nil, nil, nil))
+        if let expandRect {
             regions.append(InteractionRegion(
-                rects: [CGRect(x: min(origin.x + lineWidth, bounds.maxX - 44), y: origin.y - 16, width: 44, height: 20)],
+                rects: [expandRect],
                 action: .expand(itemID),
                 accessibilityLabel: "Expand"
             ))
         }
         return TextLayout(storage: CoreTextLayoutStorage(lines: lines, origins: origins), bounds: bounds, regions: regions)
+    }
+
+    private static func boundsX(_ x: CGFloat, width: CGFloat, tokenWidth: CGFloat) -> CGFloat {
+        x + max(0, width - tokenWidth)
     }
 
     private static func interactionRects(
@@ -217,7 +282,45 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         }
     }
 
-    private static func checkCancellation(_ operation: Operation) throws {
-        if operation.isCancelled { throw CancellationError() }
+    private static func checkCancellation(_ cancellation: LayoutCancellation) throws {
+        if cancellation.isCancelled { throw CancellationError() }
+    }
+}
+
+private final class LayoutCancellation: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cancelled = false
+    var isCancelled: Bool { lock.withLock { cancelled } }
+    func cancel() { lock.withLock { cancelled = true } }
+}
+
+private final class LayoutCompletion<Value: Sendable>: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<Value, Error>?
+    private var pending: Result<Value, Error>?
+
+    func install(_ continuation: CheckedContinuation<Value, Error>) {
+        let result = lock.withLock { () -> Result<Value, Error>? in
+            if let pending { return pending }
+            self.continuation = continuation
+            return nil
+        }
+        if let result {
+            continuation.resume(with: result)
+        }
+    }
+
+    func resume(_ result: Result<Value, Error>) {
+        let continuation = lock.withLock { () -> CheckedContinuation<Value, Error>? in
+            guard pending == nil else { return nil }
+            guard let continuation else {
+                pending = result
+                return nil
+            }
+            self.continuation = nil
+            pending = result
+            return continuation
+        }
+        continuation?.resume(with: result)
     }
 }
