@@ -56,4 +56,10 @@ final class FeedModelsTests: XCTestCase {
         XCTAssertFalse(item.user.isVerified)
         XCTAssertNil(item.user.verifiedType)
     }
+
+    func testSourceEntityDecodingIsSinglePassForNestedEncoding() throws {
+        let json = #"{"statuses":[{"id":"1","source":"<a>&amp;#x41; &amp;lt; &#65; &#x4E2D;</a>","text":"hello","user":{"id":"2","name":"A"}}]}"#.data(using: .utf8)!
+        let item = try JSONDecoder.weibo.decode(FeedPage.self, from: json).items[0]
+        XCTAssertEqual(item.source, "&#x41; &lt; A 中")
+    }
 }

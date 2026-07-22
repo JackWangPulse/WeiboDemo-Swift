@@ -77,6 +77,20 @@ Exact verification evidence:
 - Full `SwiftWeiboFeed` scheme on iPhone 17 Pro simulator after final accessibility changes: `xcodebuild` exit 0.
 - `git diff --check`: clean.
 
+## Unicode Boundary and Single-Pass Entity Fix
+
+Status: complete
+
+- Replaced the unsafe conversion of a lone UTF-16 code unit to `UnicodeScalar` with direct CR/LF code-unit checks, so a truncation boundary after a surrogate-pair emoji cannot trap.
+- Added a deterministic sixth-line test with a non-BMP emoji at the visible boundary and verified the expand token and region remain valid.
+- Replaced staged entity substitutions with a deterministic single-pass scanner. Named and decimal/hex numeric entities decode once, while nested encodings remain literal (`&amp;#x41;` → `&#x41;`, `&amp;lt;` → `&lt;`).
+
+Verification:
+
+- Focused `FeedModelsTests` + `FeedLayoutEngineTests`: exit 0 on iPhone 17 Pro simulator.
+- Full `SwiftWeiboFeed` scheme: exit 0 on iPhone 17 Pro simulator.
+- `git diff --check`: clean.
+
 Concerns: none known within Task 5 scope.
 
 ## Final CoreText Index-Base Fix

@@ -71,6 +71,15 @@ final class FeedLayoutEngineTests: XCTestCase {
         XCTAssertLessThanOrEqual(try XCTUnwrap(url.rects.last).maxX, try XCTUnwrap(expand.rects.first).minX + 0.001)
     }
 
+    func testSixthLineTruncationBoundaryAfterNonBMPEmojiIsSafe() async throws {
+        let text = "1\n2\n3\n4\n5\n" + String(repeating: "😀", count: 100) + " trailing"
+        let item = try makeItem(text: text)
+        let layout = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(text), parsedRepost: nil, environment: environment(width: 240))
+        XCTAssertEqual(layout.body.storage.lines.count, 6)
+        XCTAssertEqual(layout.body.regions.last?.action, .expand(item.id))
+        XCTAssertTrue(layout.body.bounds.contains(try XCTUnwrap(layout.body.regions.last?.rects.first)))
+    }
+
     func testRepostHasContainedBodyAndMedia() async throws {
         let item = try makeItem(text: "Original", repostText: "Reposted @bob", repostPictures: 4)
         let repost = try XCTUnwrap(item.repost)

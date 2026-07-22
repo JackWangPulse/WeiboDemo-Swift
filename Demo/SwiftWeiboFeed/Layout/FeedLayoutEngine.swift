@@ -251,8 +251,10 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let visibleWidth = max(0, width - tokenWidth)
             let prefixCount = CTTypesetterSuggestClusterBreak(typesetter, finalRange.location, Double(visibleWidth))
             visibleUTF16End = min(finalRange.location + prefixCount, finalRange.location + finalRange.length)
-            while visibleUTF16End > finalRange.location,
-                  CharacterSet.newlines.contains(UnicodeScalar((text.string as NSString).character(at: visibleUTF16End - 1))!) {
+            let source = text.string as NSString
+            while visibleUTF16End > finalRange.location {
+                let previousCodeUnit = source.character(at: visibleUTF16End - 1)
+                guard previousCodeUnit == 0x0A || previousCodeUnit == 0x0D else { break }
                 visibleUTF16End -= 1
             }
             if let lastRange = ranges.indices.last {

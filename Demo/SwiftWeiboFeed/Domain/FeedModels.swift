@@ -175,21 +175,38 @@ public struct FeedItem: Decodable, Hashable, Sendable {
 
     private static func normalizedSource(_ raw: String) -> String? {
         var normalized = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-        let entities = ["&amp;": "&", "&quot;": "\"", "&apos;": "'", "&lt;": "<", "&gt;": ">"]
-        for (entity, value) in entities { normalized = normalized.replacingOccurrences(of: entity, with: value) }
-        if let expression = try? NSRegularExpression(pattern: "&#(x[0-9A-Fa-f]+|[0-9]+);") {
-            let matches = expression.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized))
-            for match in matches.reversed() {
-                let source = normalized as NSString
-                let value = source.substring(with: match.range(at: 1))
-                let radix = value.hasPrefix("x") ? 16 : 10
-                let digits = value.hasPrefix("x") ? String(value.dropFirst()) : value
-                guard let scalarValue = UInt32(digits, radix: radix), let scalar = UnicodeScalar(scalarValue) else { continue }
-                normalized = (normalized as NSString).replacingCharacters(in: match.range, with: String(scalar))
-            }
-        }
+        normalized = decodeHTMLEntitiesOnce(normalized)
         normalized = normalized
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
+    }
+
+    private static func decodeHTMLEntitiesOnce(_ source: String) -> String {
+        let named = ["amp": "&", "quot": "\"", "apos": "'", "lt": "<", "gt": ">"]
+        var result = ""
+        var cursor = source.startIndex
+        while cursor < source.endIndex {
+            guard source[cursor] == "&", let semicolon = source[cursor...].firstIndex(of: ";") else {
+                result.append(source[cursor]); cursor = source.index(after: cursor); continue
+            }
+            let entityStart = source.index(after: cursor)
+            let entity = String(source[entityStart..<semicolon])
+            let decoded: String?
+            if let namedValue = named[entity] {
+                decoded = namedValue
+            } else if entity.hasPrefix("#x"), let value = UInt32(entity.dropFirst(2), radix: 16), let scalar = UnicodeScalar(value) {
+                decoded = String(scalar)
+            } else if entity.hasPrefix("#"), let value = UInt32(entity.dropFirst()), let scalar = UnicodeScalar(value) {
+                decoded = String(scalar)
+            } else {
+                decoded = nil
+            }
+            guard let decoded else {
+                result.append(source[cursor]); cursor = source.index(after: cursor); continue
+            }
+            result += decoded
+            cursor = source.index(after: semicolon)
+        }
+        return result
     }
 }
