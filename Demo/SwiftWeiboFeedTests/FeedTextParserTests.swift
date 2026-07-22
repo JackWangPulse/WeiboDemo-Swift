@@ -47,6 +47,36 @@ final class FeedTextParserTests: XCTestCase {
         }
     }
 
+    func testTrailingASCIIProseTerminatorsAndClosingQuotesRemainPlain() {
+        let cases = ["!", "?", ";", ":", "\"", "'", "”", "’"]
+
+        for punctuation in cases {
+            let source = "https://example.com/path\(punctuation)"
+            let result = parser.parse(source)
+
+            XCTAssertEqual(result.spans.map(\.kind), [.link, .plain], source)
+            XCTAssertEqual(String(source[result.spans[0].range]), "https://example.com/path", source)
+            XCTAssertEqual(String(source[result.spans[1].range]), punctuation, source)
+        }
+    }
+
+    func testTerminalQueryPunctuationAndPortSyntaxRemainInURL() {
+        let cases = [
+            "https://example.com/search?q=what?",
+            "https://example.com/search?q=wow!",
+            "https://example.com/search?q=value;",
+            "https://example.com/search?q=value:",
+            "https://example.com:8080/path"
+        ]
+
+        for source in cases {
+            let result = parser.parse(source)
+
+            XCTAssertEqual(result.spans.map(\.kind), [.link], source)
+            XCTAssertEqual(String(source[result.spans[0].range]), source, source)
+        }
+    }
+
     func testBalancedClosingParenthesisRemainsPartOfURL() {
         let source = "https://example.com/wiki/Function_(math)"
 
@@ -65,6 +95,16 @@ final class FeedTextParserTests: XCTestCase {
             XCTAssertEqual(result.spans.map(\.kind), [.plain], source)
             XCTAssertNil(result.spans[0].action, source)
         }
+    }
+
+    func testMalformedHTTPCandidateBlocksNestedSemanticRecognition() {
+        let source = "https:///path#topic#/@alice/[笑哭]"
+
+        let result = parser.parse(source)
+
+        XCTAssertEqual(result.spans.map(\.kind), [.plain])
+        XCTAssertEqual(String(source[result.spans[0].range]), source)
+        XCTAssertNil(result.spans[0].action)
     }
 
     func testTopicWinsOverOverlappingMention() {

@@ -37,10 +37,15 @@ public struct FeedTextParser: Sendable {
             while end < source.endIndex, !source[end].isWhitespace {
                 source.formIndex(after: &end)
             }
+            let candidateRange = start..<end
             end = Self.trimmingSentencePunctuation(from: start..<end, in: source)
-            guard end > start else { return nil }
+            guard end > start else {
+                return FeedTextSpan(kind: .plain, range: candidateRange)
+            }
             let range = start..<end
-            guard let url = Self.validHTTPURL(String(source[range])) else { return nil }
+            guard let url = Self.validHTTPURL(String(source[range])) else {
+                return FeedTextSpan(kind: .plain, range: candidateRange)
+            }
             return FeedTextSpan(kind: .link, range: range, action: .url(url))
         }
     }
@@ -131,6 +136,8 @@ public struct FeedTextParser: Sendable {
             let lastIndex = source.index(before: end)
             let character = source[lastIndex]
             if terminalSentencePunctuation.contains(character)
+                || terminalClosingQuotes.contains(character)
+                || shouldTrimAmbiguousASCIITerminator(character, in: source[range.lowerBound..<end])
                 || isUnmatchedClosing(character, before: end, in: source[range.lowerBound..<end]) {
                 end = lastIndex
             } else {
@@ -143,6 +150,10 @@ public struct FeedTextParser: Sendable {
     private static let terminalSentencePunctuation: Set<Character> = [
         ".", ",", "。", "，", "！", "？", "；", "："
     ]
+
+    private static let terminalClosingQuotes: Set<Character> = ["\"", "'", "”", "’"]
+
+    private static let ambiguousASCIITerminators: Set<Character> = ["!", "?", ";", ":"]
 
     private static let closingPairs: [Character: Character] = [
         ")": "(", "]": "[", "}": "{", "）": "（", "】": "【",
@@ -157,5 +168,17 @@ public struct FeedTextParser: Sendable {
         guard let opening = closingPairs[character] else { return false }
         let prefix = token[..<end]
         return prefix.filter { $0 == character }.count > prefix.filter { $0 == opening }.count
+    }
+
+    private static func shouldTrimAmbiguousASCIITerminator(
+        _ character: Character,
+        in token: Substring
+    ) -> Bool {
+        guard ambiguousASCIITerminators.contains(character) else { return false }
+        guard let components = URLComponents(string: String(token)),
+              let query = components.percentEncodedQuery,
+              !query.isEmpty,
+              query.contains("=") else { return true }
+        return false
     }
 }
