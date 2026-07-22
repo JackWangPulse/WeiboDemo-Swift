@@ -132,6 +132,9 @@ private final class SharedSubscriptionState: @unchecked Sendable {
             body()
         }
     }
+
+    var isEmpty: Bool { lock.withLock { subscribers.isEmpty } }
+    var count: Int { lock.withLock { subscribers.count } }
 }
 
 private final class DecodeState: @unchecked Sendable {
@@ -193,6 +196,7 @@ actor SystemImagePipeline: ImagePipeline {
     private let session: URLSession
     private let cache: DecodedImageCache
     private let decoder: ImageDecoder
+    private let cancellationCleanupHook: (@Sendable () -> Void)?
     private var inFlight: [ImageRequest: InFlight] = [:]
     private struct PrefetchEntry {
         let token: UUID
@@ -204,7 +208,8 @@ actor SystemImagePipeline: ImagePipeline {
         configuration: URLSessionConfiguration = .default,
         decodedCache: DecodedImageCache = DecodedImageCache(),
         decodeHook: (@Sendable () -> Void)? = nil,
-        decodeEnqueuedHook: (@Sendable () -> Void)? = nil
+        decodeEnqueuedHook: (@Sendable () -> Void)? = nil,
+        cancellationCleanupHook: (@Sendable () -> Void)? = nil
     ) {
         if configuration.urlCache == nil {
             configuration.urlCache = URLCache(memoryCapacity: 32 * 1_024 * 1_024, diskCapacity: 128 * 1_024 * 1_024)
@@ -213,6 +218,7 @@ actor SystemImagePipeline: ImagePipeline {
         session = URLSession(configuration: configuration)
         cache = decodedCache
         decoder = ImageDecoder(hook: decodeHook, enqueuedHook: decodeEnqueuedHook)
+        self.cancellationCleanupHook = cancellationCleanupHook
     }
 
     func image(for request: ImageRequest) async throws -> ImageResponse {
@@ -263,7 +269,11 @@ actor SystemImagePipeline: ImagePipeline {
             }
         } onCancel: {
             let isEmpty = subscriptions.cancel(subscriber, cache: self.cache, request: request)
-            Task { await self.cleanupCancelledSubscriber(request: request, subscriptions: subscriptions, cancelTask: isEmpty) }
+            let cleanupHook = self.cancellationCleanupHook
+            Task {
+                cleanupHook?()
+                await self.cleanupCancelledSubscriber(request: request, subscriptions: subscriptions, cancelTask: isEmpty)
+            }
         }
     }
 
@@ -309,7 +319,7 @@ actor SystemImagePipeline: ImagePipeline {
         cancelTask: Bool
     ) {
         guard let current = inFlight[request], current.subscriptions === subscriptions else { return }
-        if cancelTask {
+        if cancelTask, subscriptions.isEmpty {
             inFlight.removeValue(forKey: request)
             current.task.cancel()
         }
@@ -321,4 +331,7 @@ actor SystemImagePipeline: ImagePipeline {
     }
 
     var prefetchCountForTesting: Int { prefetchTasks.count }
+    func activeSubscriberCountForTesting(_ request: ImageRequest) -> Int {
+        inFlight[request]?.subscriptions.count ?? 0
+    }
 }

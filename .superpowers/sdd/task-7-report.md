@@ -51,3 +51,10 @@ Verification evidence:
 - The decode queue exposes a test-only enqueue hook. The queued-cancellation regression now proves the third operation was installed behind two blockers before canceling it.
 - Sole-subscriber URL cancellation now has a deterministic regression asserting `CancellationError` and an observed custom-URL-protocol `stopLoading` call. The shared-waiter cancellation assertion also requires `CancellationError` exactly.
 - Fresh second-cycle verification: arm64 iOS Simulator `build-for-testing` completed with `** TEST BUILD SUCCEEDED **`. Only existing deployment-target linker warnings were emitted.
+
+## Final Narrow Follow-up
+
+- Cancellation cleanup now rechecks the current shared subscription state's emptiness under its lock after actor isolation is reacquired. A replacement subscriber joining the same state prevents removal and shared-task cancellation; its later completion still performs normal empty-state cleanup.
+- A deterministic cleanup barrier regression cancels the last subscriber, delays actor cleanup, waits until a replacement has joined, and verifies one successful protocol load with no `stopLoading` cancellation.
+- URL cancellation tests now await an explicit custom-URL-protocol `startLoading` signal instead of sleeping before cancellation.
+- Fresh verification: arm64 iOS Simulator `build-for-testing` completed with `** TEST BUILD SUCCEEDED **`.

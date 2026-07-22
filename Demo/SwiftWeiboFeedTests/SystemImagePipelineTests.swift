@@ -107,12 +107,38 @@ final class SystemImagePipelineTests: XCTestCase {
         let pipeline = makePipeline()
         let imageRequest = request(width: 206, height: 206, path: "network-cancel")
         let task = Task { try await pipeline.image(for: imageRequest) }
-        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(StubURLProtocol.waitForStarts(1), "request must reach URLProtocol before cancellation")
         task.cancel()
         await XCTAssertCancellationError { try await task.value }
         try await Task.sleep(for: .milliseconds(50))
         XCTAssertGreaterThanOrEqual(StubURLProtocol.stopLoadingCount, 1)
         StubURLProtocol.gate?.signal()
+    }
+
+    func testReplacementSubscriberJoiningBeforeCancellationCleanupKeepsSharedWork() async throws {
+        StubURLProtocol.responseData = Self.png(width: 800, height: 400)
+        StubURLProtocol.gate = DispatchSemaphore(value: 0)
+        let cleanup = CleanupBarrier()
+        let pipeline = makePipeline(cancellationCleanupHook: cleanup.hook)
+        let imageRequest = request(width: 207, height: 207, path: "replacement")
+        let cancelled = Task { try await pipeline.image(for: imageRequest) }
+        XCTAssertTrue(StubURLProtocol.waitForStarts(1))
+        cancelled.cancel()
+        XCTAssertTrue(cleanup.waitUntilBlocked())
+        let replacement = Task { try await pipeline.image(for: imageRequest) }
+        for _ in 0..<20 {
+            if await pipeline.activeSubscriberCountForTesting(imageRequest) == 1 { break }
+            await Task.yield()
+        }
+        let replacementSubscriberCount = await pipeline.activeSubscriberCountForTesting(imageRequest)
+        XCTAssertEqual(replacementSubscriberCount, 1)
+        cleanup.release()
+        StubURLProtocol.gate?.signal()
+        await XCTAssertCancellationError { try await cancelled.value }
+        let replacementResponse = try await replacement.value
+        XCTAssertEqual(replacementResponse.image.width, 207)
+        XCTAssertEqual(StubURLProtocol.loadCount, 1)
+        XCTAssertEqual(StubURLProtocol.stopLoadingCount, 0)
     }
 
     func testCancelDuringControlledDecodeReturnsCancellationAndIsNotCached() async throws {
@@ -147,13 +173,19 @@ final class SystemImagePipelineTests: XCTestCase {
 
     private func makePipeline(
         decodeHook: (@Sendable () -> Void)? = nil,
-        decodeEnqueuedHook: (@Sendable () -> Void)? = nil
+        decodeEnqueuedHook: (@Sendable () -> Void)? = nil,
+        cancellationCleanupHook: (@Sendable () -> Void)? = nil
     ) -> SystemImagePipeline {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
         configuration.urlCache = URLCache(memoryCapacity: 4_000_000, diskCapacity: 0)
         configuration.requestCachePolicy = .useProtocolCachePolicy
-        return SystemImagePipeline(configuration: configuration, decodeHook: decodeHook, decodeEnqueuedHook: decodeEnqueuedHook)
+        return SystemImagePipeline(
+            configuration: configuration,
+            decodeHook: decodeHook,
+            decodeEnqueuedHook: decodeEnqueuedHook,
+            cancellationCleanupHook: cancellationCleanupHook
+        )
     }
 
     private func request(width: Int, height: Int, mode: ImageContentMode = .aspectFit, path: String = "image") -> ImageRequest {
@@ -178,16 +210,22 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var gate: DispatchSemaphore?
     nonisolated(unsafe) private static var count = 0
     nonisolated(unsafe) private static var stopCount = 0
+    nonisolated(unsafe) private static var startSignal = DispatchSemaphore(value: 0)
     private let stateLock = NSLock()
     private var stopped = false
     static var loadCount: Int { lock.withLock { count } }
     static var stopLoadingCount: Int { lock.withLock { stopCount } }
 
-    static func reset() { lock.withLock { count = 0; stopCount = 0; responseData = Data(); gate = nil } }
+    static func reset() { lock.withLock { count = 0; stopCount = 0; responseData = Data(); gate = nil; startSignal = DispatchSemaphore(value: 0) } }
+    static func waitForStarts(_ expected: Int) -> Bool {
+        for _ in 0..<expected where startSignal.wait(timeout: .now() + 2) != .success { return false }
+        return true
+    }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
         Self.lock.withLock { Self.count += 1 }
+        Self.startSignal.signal()
         let data = Self.lock.withLock { Self.responseData }
         let gate = Self.lock.withLock { Self.gate }
         DispatchQueue.global().async { [weak self] in
@@ -249,6 +287,18 @@ private final class EnqueueObservations: @unchecked Sendable {
         for _ in 0..<expected where signal.wait(timeout: .now() + 2) != .success { return false }
         return lock.withLock { count >= expected }
     }
+}
+
+private final class CleanupBarrier: @unchecked Sendable {
+    private let entered = DispatchSemaphore(value: 0)
+    private let releaseSignal = DispatchSemaphore(value: 0)
+    lazy var hook: @Sendable () -> Void = { [weak self] in
+        guard let self else { return }
+        self.entered.signal()
+        _ = self.releaseSignal.wait(timeout: .now() + 2)
+    }
+    func waitUntilBlocked() -> Bool { entered.wait(timeout: .now() + 2) == .success }
+    func release() { releaseSignal.signal() }
 }
 
 private func XCTAssertThrowsErrorAsync<T>(_ expression: () async throws -> T, file: StaticString = #filePath, line: UInt = #line) async {
