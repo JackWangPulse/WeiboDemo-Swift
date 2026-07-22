@@ -28,6 +28,74 @@ final class FeedTextParserTests: XCTestCase {
         XCTAssertEqual(String(source[result.spans[0].range]), source)
     }
 
+    func testTrailingSentencePunctuationRemainsPlain() throws {
+        let cases = [
+            ("https://example.com/path,", "https://example.com/path", ","),
+            ("https://example.com/path.", "https://example.com/path", "."),
+            ("https://example.com/path。", "https://example.com/path", "。"),
+            ("https://example.com/path，", "https://example.com/path", "，"),
+            ("https://example.com/path）", "https://example.com/path", "）")
+        ]
+
+        for (source, link, punctuation) in cases {
+            let result = parser.parse(source)
+
+            XCTAssertEqual(result.spans.map(\.kind), [.link, .plain], source)
+            XCTAssertEqual(String(source[result.spans[0].range]), link, source)
+            XCTAssertEqual(String(source[result.spans[1].range]), punctuation, source)
+            XCTAssertEqual(result.spans[0].action, .url(try XCTUnwrap(URL(string: link))), source)
+        }
+    }
+
+    func testBalancedClosingParenthesisRemainsPartOfURL() {
+        let source = "https://example.com/wiki/Function_(math)"
+
+        let result = parser.parse(source)
+
+        XCTAssertEqual(result.spans.map(\.kind), [.link])
+        XCTAssertEqual(String(source[result.spans[0].range]), source)
+    }
+
+    func testMalformedAndHostlessHTTPCandidatesRemainPlain() {
+        let cases = ["http://", "https:///path", "http://?query"]
+
+        for source in cases {
+            let result = parser.parse(source)
+
+            XCTAssertEqual(result.spans.map(\.kind), [.plain], source)
+            XCTAssertNil(result.spans[0].action, source)
+        }
+    }
+
+    func testTopicWinsOverOverlappingMention() {
+        let source = "#@alice#"
+
+        let result = parser.parse(source)
+
+        XCTAssertEqual(result.spans.map(\.kind), [.topic])
+        XCTAssertEqual(result.spans[0].action, .topic("@alice"))
+    }
+
+    func testTopicWinsOverOverlappingEmoticon() {
+        let source = "#[笑哭]#"
+
+        let result = parser.parse(source)
+
+        XCTAssertEqual(result.spans.map(\.kind), [.topic])
+        XCTAssertEqual(result.spans[0].action, .topic("[笑哭]"))
+    }
+
+    func testAdjacentCandidateSurvivesAfterRejectedOverlap() {
+        let source = "#@alice#[鼓掌]"
+
+        let result = parser.parse(source)
+
+        XCTAssertEqual(result.spans.map(\.kind), [.topic, .emoticon])
+        XCTAssertEqual(result.spans[0].action, .topic("@alice"))
+        XCTAssertEqual(result.spans[1].emoticonName, "鼓掌")
+        XCTAssertEqual(result.spans.map { String(source[$0.range]) }.joined(), source)
+    }
+
     func testMalformedTokensRemainPlainAndValidUnicodeRangesArePreserved() {
         let source = "👨‍👩‍👧‍👦 @甲 #未闭合 [坏"
 

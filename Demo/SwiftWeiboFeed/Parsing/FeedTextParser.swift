@@ -37,9 +37,11 @@ public struct FeedTextParser: Sendable {
             while end < source.endIndex, !source[end].isWhitespace {
                 source.formIndex(after: &end)
             }
+            end = Self.trimmingSentencePunctuation(from: start..<end, in: source)
+            guard end > start else { return nil }
             let range = start..<end
-            let action = URL(string: String(source[range])).map(FeedAction.url)
-            return FeedTextSpan(kind: .link, range: range, action: action)
+            guard let url = Self.validHTTPURL(String(source[range])) else { return nil }
+            return FeedTextSpan(kind: .link, range: range, action: .url(url))
         }
     }
 
@@ -109,5 +111,51 @@ public struct FeedTextParser: Sendable {
         character == "_" || character.unicodeScalars.allSatisfy {
             CharacterSet.alphanumerics.contains($0)
         }
+    }
+
+    private static func validHTTPURL(_ token: String) -> URL? {
+        guard let components = URLComponents(string: token),
+              let scheme = components.scheme?.lowercased(),
+              scheme == "http" || scheme == "https",
+              let host = components.host,
+              !host.isEmpty else { return nil }
+        return components.url
+    }
+
+    private static func trimmingSentencePunctuation(
+        from range: Range<String.Index>,
+        in source: String
+    ) -> String.Index {
+        var end = range.upperBound
+        while end > range.lowerBound {
+            let lastIndex = source.index(before: end)
+            let character = source[lastIndex]
+            if terminalSentencePunctuation.contains(character)
+                || isUnmatchedClosing(character, before: end, in: source[range.lowerBound..<end]) {
+                end = lastIndex
+            } else {
+                break
+            }
+        }
+        return end
+    }
+
+    private static let terminalSentencePunctuation: Set<Character> = [
+        ".", ",", "。", "，", "！", "？", "；", "："
+    ]
+
+    private static let closingPairs: [Character: Character] = [
+        ")": "(", "]": "[", "}": "{", "）": "（", "】": "【",
+        "》": "《", "〉": "〈", "」": "「", "』": "『"
+    ]
+
+    private static func isUnmatchedClosing(
+        _ character: Character,
+        before end: String.Index,
+        in token: Substring
+    ) -> Bool {
+        guard let opening = closingPairs[character] else { return false }
+        let prefix = token[..<end]
+        return prefix.filter { $0 == character }.count > prefix.filter { $0 == opening }.count
     }
 }
