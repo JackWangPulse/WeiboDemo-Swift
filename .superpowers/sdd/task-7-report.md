@@ -34,3 +34,12 @@ Verification evidence:
 - Checked continuations are resumed on every decoder operation path.
 - Cache costs and source pixel multiplication are guarded before arithmetic.
 - Encoded payloads, target dimensions, and source pixel counts are bounded to limit decompression-bomb exposure.
+
+## Review Follow-up
+
+- Orientation-aware sizing now reads EXIF orientation before scale calculation and swaps the display axes for orientations 5 through 8. Non-square orientation-6 aspect-fit and aspect-fill regressions were added.
+- Decode operations now have locked, single-resume cancellation state. Queued operations are canceled before execution; running operations check cancellation before metadata, thumbnail creation, caching, and return.
+- Cancellation tests cover a third decode queued behind two controlled blockers and cancellation during controlled decode, including specific `CancellationError` assertions and proof that canceled output is not decoded-cache resident.
+- Prefetch entries now use ownership tokens and install a placeholder before starting their task. Completion removes an entry only when its token still owns that request, preventing stale completion and immediate-completion races.
+- The custom URL protocol now records `stopLoading` and suppresses every subsequent callback after cancellation.
+- Fresh verification after these fixes: `xcodebuild ... -sdk iphonesimulator -arch arm64 ... build-for-testing` completed with `** TEST BUILD SUCCEEDED **`. Runtime simulator execution was intentionally left to the parent because no concrete simulator destinations are visible in this environment.

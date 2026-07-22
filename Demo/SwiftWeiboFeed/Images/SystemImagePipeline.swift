@@ -24,24 +24,41 @@ private final class ImageDecoder: @unchecked Sendable {
     }
 
     func decode(_ data: Data, request: ImageRequest) async throws -> SendableCGImage {
-        try await withCheckedThrowingContinuation { continuation in
-            queue.addOperation { [hook] in
-                do {
-                    hook?()
-                    continuation.resume(returning: try Self.makeThumbnail(data, request: request))
-                } catch {
-                    continuation.resume(throwing: error)
+        let state = DecodeState()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                state.install(continuation)
+                let operation = BlockOperation { [hook] in
+                    do {
+                        try state.checkCancellation()
+                        hook?()
+                        try state.checkCancellation()
+                        let image = try Self.makeThumbnail(data, request: request, checkCancellation: state.checkCancellation)
+                        try state.checkCancellation()
+                        state.finish(.success(image))
+                    } catch {
+                        state.finish(.failure(error))
+                    }
                 }
+                state.install(operation)
+                queue.addOperation(operation)
             }
+        } onCancel: {
+            state.cancel()
         }
     }
 
-    private static func makeThumbnail(_ data: Data, request: ImageRequest) throws -> SendableCGImage {
+    private static func makeThumbnail(
+        _ data: Data,
+        request: ImageRequest,
+        checkCancellation: () throws -> Void
+    ) throws -> SendableCGImage {
         let target = request.targetPixelSize
         guard target.width > 0, target.height > 0,
               target.width <= maximumDimension, target.height <= maximumDimension else {
             throw SystemImagePipelineError.invalidTargetSize
         }
+        try checkCancellation()
         guard let source = CGImageSourceCreateWithData(data as CFData, [kCGImageSourceShouldCache: false] as CFDictionary),
               let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
               let sourceWidth = properties[kCGImagePropertyPixelWidth] as? NSNumber,
@@ -54,12 +71,16 @@ private final class ImageDecoder: @unchecked Sendable {
               width <= maximumSourcePixels / height else {
             throw SystemImagePipelineError.encodedImageTooLarge
         }
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        let swapsAxes = (5...8).contains(orientation)
+        let displayWidth = swapsAxes ? height : width
+        let displayHeight = swapsAxes ? width : height
         let scale: Double
         switch request.contentMode {
         case .aspectFit:
-            scale = min(Double(target.width) / Double(width), Double(target.height) / Double(height))
+            scale = min(Double(target.width) / Double(displayWidth), Double(target.height) / Double(displayHeight))
         case .aspectFill:
-            scale = max(Double(target.width) / Double(width), Double(target.height) / Double(height))
+            scale = max(Double(target.width) / Double(displayWidth), Double(target.height) / Double(displayHeight))
         }
         let maximum = max(1, Int(ceil(Double(max(width, height)) * min(scale, 1))))
         let options: [CFString: Any] = [
@@ -69,10 +90,60 @@ private final class ImageDecoder: @unchecked Sendable {
             kCGImageSourceShouldCacheImmediately: true,
             kCGImageSourceShouldCache: false,
         ]
+        try checkCancellation()
         guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else {
             throw SystemImagePipelineError.invalidImage
         }
         return SendableCGImage(value: image)
+    }
+}
+
+private final class DecodeState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var continuation: CheckedContinuation<SendableCGImage, Error>?
+    private weak var operation: Operation?
+    private var completed = false
+    private var cancelled = false
+
+    func install(_ continuation: CheckedContinuation<SendableCGImage, Error>) {
+        let cancelImmediately = lock.withLock {
+            guard !completed else { return true }
+            self.continuation = continuation
+            return cancelled
+        }
+        if cancelImmediately { finish(.failure(CancellationError())) }
+    }
+
+    func install(_ operation: Operation) {
+        let cancelImmediately = lock.withLock {
+            self.operation = operation
+            return cancelled
+        }
+        if cancelImmediately { operation.cancel() }
+    }
+
+    func cancel() {
+        let operation = lock.withLock { () -> Operation? in
+            cancelled = true
+            return self.operation
+        }
+        operation?.cancel()
+        finish(.failure(CancellationError()))
+    }
+
+    func checkCancellation() throws {
+        if lock.withLock({ cancelled }) { throw CancellationError() }
+    }
+
+    func finish(_ result: Result<SendableCGImage, Error>) {
+        let continuation = lock.withLock { () -> CheckedContinuation<SendableCGImage, Error>? in
+            guard !completed, let continuation = self.continuation else { return nil }
+            completed = true
+            self.continuation = nil
+            operation = nil
+            return continuation
+        }
+        continuation?.resume(with: result)
     }
 }
 
@@ -87,7 +158,11 @@ actor SystemImagePipeline: ImagePipeline {
     private let cache: DecodedImageCache
     private let decoder: ImageDecoder
     private var inFlight: [ImageRequest: InFlight] = [:]
-    private var prefetchTasks: [ImageRequest: Task<Void, Never>] = [:]
+    private struct PrefetchEntry {
+        let token: UUID
+        var task: Task<Void, Never>?
+    }
+    private var prefetchTasks: [ImageRequest: PrefetchEntry] = [:]
 
     init(
         configuration: URLSessionConfiguration = .default,
@@ -127,7 +202,9 @@ actor SystemImagePipeline: ImagePipeline {
                 }
                 guard data.count <= Self.maximumEncodedBytes else { throw SystemImagePipelineError.encodedImageTooLarge }
                 let image = try await decoder.decode(data, request: request)
+                try Task.checkCancellation()
                 cache.insert(image, for: request)
+                try Task.checkCancellation()
                 return image
             }
             inFlight[request] = InFlight(task: task, subscribers: [subscriber])
@@ -150,16 +227,23 @@ actor SystemImagePipeline: ImagePipeline {
 
     func prefetch(_ requests: [ImageRequest]) async {
         for request in requests where prefetchTasks[request] == nil {
-            prefetchTasks[request] = Task { [weak self] in
+            let token = UUID()
+            prefetchTasks[request] = PrefetchEntry(token: token, task: nil)
+            let task = Task { [weak self] in
                 _ = try? await self?.image(for: request)
-                await self?.prefetchFinished(request)
+                await self?.prefetchFinished(request, token: token)
+            }
+            if prefetchTasks[request]?.token == token {
+                prefetchTasks[request]?.task = task
+            } else {
+                task.cancel()
             }
         }
     }
 
     func cancelPrefetch(_ requests: [ImageRequest]) async {
         for request in requests {
-            prefetchTasks.removeValue(forKey: request)?.cancel()
+            prefetchTasks.removeValue(forKey: request)?.task?.cancel()
         }
     }
 
@@ -174,7 +258,10 @@ actor SystemImagePipeline: ImagePipeline {
         }
     }
 
-    private func prefetchFinished(_ request: ImageRequest) {
+    private func prefetchFinished(_ request: ImageRequest, token: UUID) {
+        guard prefetchTasks[request]?.token == token else { return }
         prefetchTasks.removeValue(forKey: request)
     }
+
+    var prefetchCountForTesting: Int { prefetchTasks.count }
 }
