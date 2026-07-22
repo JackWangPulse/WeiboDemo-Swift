@@ -42,7 +42,7 @@ final class SystemImagePipelineTests: XCTestCase {
         try await Task.sleep(for: .milliseconds(100))
         cancelled.cancel()
         StubURLProtocol.gate?.signal()
-        await XCTAssertThrowsErrorAsync { try await cancelled.value }
+        await XCTAssertCancellationError { try await cancelled.value }
         let survivingResponse = try await survivor.value
         XCTAssertEqual(survivingResponse.image.width, 200)
         XCTAssertEqual(StubURLProtocol.loadCount, 1)
@@ -84,7 +84,8 @@ final class SystemImagePipelineTests: XCTestCase {
     func testCancelQueuedDecodeReturnsCancellationWithoutEnteringDecode() async throws {
         StubURLProtocol.responseData = Self.png(width: 800, height: 400)
         let controls = DecodeControls(blockFirst: 2)
-        let pipeline = makePipeline(decodeHook: controls.hook)
+        let enqueued = EnqueueObservations()
+        let pipeline = makePipeline(decodeHook: controls.hook, decodeEnqueuedHook: enqueued.hook)
         let firstRequest = request(width: 201, height: 201, path: "1")
         let secondRequest = request(width: 202, height: 202, path: "2")
         let queuedRequest = request(width: 203, height: 203, path: "3")
@@ -92,12 +93,26 @@ final class SystemImagePipelineTests: XCTestCase {
         let second = Task { try await pipeline.image(for: secondRequest) }
         XCTAssertTrue(controls.waitForEntries(2))
         let queued = Task { try await pipeline.image(for: queuedRequest) }
-        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertTrue(enqueued.waitForCount(3), "third decode must be installed in the operation queue before cancellation")
         queued.cancel()
         await XCTAssertCancellationError { try await queued.value }
         XCTAssertEqual(controls.entryCount, 2)
         controls.releaseAll()
         _ = try await (first.value, second.value)
+    }
+
+    func testCancellingOnlyNetworkSubscriberStopsProtocolAndThrowsCancellation() async throws {
+        StubURLProtocol.responseData = Self.png(width: 800, height: 400)
+        StubURLProtocol.gate = DispatchSemaphore(value: 0)
+        let pipeline = makePipeline()
+        let imageRequest = request(width: 206, height: 206, path: "network-cancel")
+        let task = Task { try await pipeline.image(for: imageRequest) }
+        try await Task.sleep(for: .milliseconds(50))
+        task.cancel()
+        await XCTAssertCancellationError { try await task.value }
+        try await Task.sleep(for: .milliseconds(50))
+        XCTAssertGreaterThanOrEqual(StubURLProtocol.stopLoadingCount, 1)
+        StubURLProtocol.gate?.signal()
     }
 
     func testCancelDuringControlledDecodeReturnsCancellationAndIsNotCached() async throws {
@@ -130,12 +145,15 @@ final class SystemImagePipelineTests: XCTestCase {
         XCTAssertLessThanOrEqual(StubURLProtocol.loadCount, 2)
     }
 
-    private func makePipeline(decodeHook: (@Sendable () -> Void)? = nil) -> SystemImagePipeline {
+    private func makePipeline(
+        decodeHook: (@Sendable () -> Void)? = nil,
+        decodeEnqueuedHook: (@Sendable () -> Void)? = nil
+    ) -> SystemImagePipeline {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [StubURLProtocol.self]
         configuration.urlCache = URLCache(memoryCapacity: 4_000_000, diskCapacity: 0)
         configuration.requestCachePolicy = .useProtocolCachePolicy
-        return SystemImagePipeline(configuration: configuration, decodeHook: decodeHook)
+        return SystemImagePipeline(configuration: configuration, decodeHook: decodeHook, decodeEnqueuedHook: decodeEnqueuedHook)
     }
 
     private func request(width: Int, height: Int, mode: ImageContentMode = .aspectFit, path: String = "image") -> ImageRequest {
@@ -159,11 +177,13 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var responseData = Data()
     nonisolated(unsafe) static var gate: DispatchSemaphore?
     nonisolated(unsafe) private static var count = 0
+    nonisolated(unsafe) private static var stopCount = 0
     private let stateLock = NSLock()
     private var stopped = false
     static var loadCount: Int { lock.withLock { count } }
+    static var stopLoadingCount: Int { lock.withLock { stopCount } }
 
-    static func reset() { lock.withLock { count = 0; responseData = Data(); gate = nil } }
+    static func reset() { lock.withLock { count = 0; stopCount = 0; responseData = Data(); gate = nil } }
     override class func canInit(with request: URLRequest) -> Bool { true }
     override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
     override func startLoading() {
@@ -182,7 +202,10 @@ private final class StubURLProtocol: URLProtocol, @unchecked Sendable {
             self.client?.urlProtocolDidFinishLoading(self)
         }
     }
-    override func stopLoading() { stateLock.withLock { stopped = true } }
+    override func stopLoading() {
+        stateLock.withLock { stopped = true }
+        Self.lock.withLock { Self.stopCount += 1 }
+    }
 }
 
 private final class LockedObservations: @unchecked Sendable {
@@ -210,6 +233,21 @@ private final class DecodeControls: @unchecked Sendable {
         let index = lock.withLock { entries += 1; return entries }
         entered.signal()
         if index <= blockFirst { _ = release.wait(timeout: .now() + 2) }
+    }
+}
+
+private final class EnqueueObservations: @unchecked Sendable {
+    private let lock = NSLock()
+    private let signal = DispatchSemaphore(value: 0)
+    private var count = 0
+    lazy var hook: @Sendable () -> Void = { [weak self] in
+        guard let self else { return }
+        self.lock.withLock { self.count += 1 }
+        self.signal.signal()
+    }
+    func waitForCount(_ expected: Int) -> Bool {
+        for _ in 0..<expected where signal.wait(timeout: .now() + 2) != .success { return false }
+        return lock.withLock { count >= expected }
     }
 }
 

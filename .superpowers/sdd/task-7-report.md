@@ -43,3 +43,11 @@ Verification evidence:
 - Prefetch entries now use ownership tokens and install a placeholder before starting their task. Completion removes an entry only when its token still owns that request, preventing stale completion and immediate-completion races.
 - The custom URL protocol now records `stopLoading` and suppresses every subsequent callback after cancellation.
 - Fresh verification after these fixes: `xcodebuild ... -sdk iphonesimulator -arch arm64 ... build-for-testing` completed with `** TEST BUILD SUCCEEDED **`. Runtime simulator execution was intentionally left to the parent because no concrete simulator destinations are visible in this environment.
+
+## Second Review Follow-up
+
+- Each in-flight request now owns a lock-backed subscriber set. Cancellation consumes its subscriber token synchronously before actor cleanup, preventing double-decrement and closing the last-subscriber actor-hop race.
+- Decoded-cache insertion and active-subscriber eligibility are checked under the same lock. Last-subscriber cancellation removes any image that won an immediately preceding insertion race; another active subscriber preserves caching.
+- The decode queue exposes a test-only enqueue hook. The queued-cancellation regression now proves the third operation was installed behind two blockers before canceling it.
+- Sole-subscriber URL cancellation now has a deterministic regression asserting `CancellationError` and an observed custom-URL-protocol `stopLoading` call. The shared-waiter cancellation assertion also requires `CancellationError` exactly.
+- Fresh second-cycle verification: arm64 iOS Simulator `build-for-testing` completed with `** TEST BUILD SUCCEEDED **`. Only existing deployment-target linker warnings were emitted.

@@ -14,9 +14,11 @@ private final class ImageDecoder: @unchecked Sendable {
     private static let maximumSourcePixels = 100_000_000
     private let queue: OperationQueue
     private let hook: (@Sendable () -> Void)?
+    private let enqueuedHook: (@Sendable () -> Void)?
 
-    init(hook: (@Sendable () -> Void)?) {
+    init(hook: (@Sendable () -> Void)?, enqueuedHook: (@Sendable () -> Void)?) {
         self.hook = hook
+        self.enqueuedHook = enqueuedHook
         queue = OperationQueue()
         queue.name = "com.ibireme.SwiftWeiboFeed.image-decode"
         queue.qualityOfService = .userInitiated
@@ -42,6 +44,7 @@ private final class ImageDecoder: @unchecked Sendable {
                 }
                 state.install(operation)
                 queue.addOperation(operation)
+                enqueuedHook?()
             }
         } onCancel: {
             state.cancel()
@@ -98,6 +101,39 @@ private final class ImageDecoder: @unchecked Sendable {
     }
 }
 
+private final class SharedSubscriptionState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var subscribers: Set<UUID> = []
+
+    func insert(_ subscriber: UUID) {
+        lock.withLock { subscribers.insert(subscriber) }
+    }
+
+    @discardableResult
+    func cancel(_ subscriber: UUID, cache: DecodedImageCache, request: ImageRequest) -> Bool {
+        lock.withLock {
+            guard subscribers.remove(subscriber) != nil else { return subscribers.isEmpty }
+            if subscribers.isEmpty { cache.removeImage(for: request) }
+            return subscribers.isEmpty
+        }
+    }
+
+    @discardableResult
+    func finish(_ subscriber: UUID) -> Bool {
+        lock.withLock {
+            subscribers.remove(subscriber)
+            return subscribers.isEmpty
+        }
+    }
+
+    func cacheIfEligible(_ body: () -> Void) {
+        lock.withLock {
+            guard !subscribers.isEmpty else { return }
+            body()
+        }
+    }
+}
+
 private final class DecodeState: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<SendableCGImage, Error>?
@@ -150,7 +186,7 @@ private final class DecodeState: @unchecked Sendable {
 actor SystemImagePipeline: ImagePipeline {
     private struct InFlight {
         let task: Task<SendableCGImage, Error>
-        var subscribers: Set<UUID>
+        let subscriptions: SharedSubscriptionState
     }
 
     private static let maximumEncodedBytes = 80 * 1_024 * 1_024
@@ -167,7 +203,8 @@ actor SystemImagePipeline: ImagePipeline {
     init(
         configuration: URLSessionConfiguration = .default,
         decodedCache: DecodedImageCache = DecodedImageCache(),
-        decodeHook: (@Sendable () -> Void)? = nil
+        decodeHook: (@Sendable () -> Void)? = nil,
+        decodeEnqueuedHook: (@Sendable () -> Void)? = nil
     ) {
         if configuration.urlCache == nil {
             configuration.urlCache = URLCache(memoryCapacity: 32 * 1_024 * 1_024, diskCapacity: 128 * 1_024 * 1_024)
@@ -175,7 +212,7 @@ actor SystemImagePipeline: ImagePipeline {
         configuration.requestCachePolicy = .useProtocolCachePolicy
         session = URLSession(configuration: configuration)
         cache = decodedCache
-        decoder = ImageDecoder(hook: decodeHook)
+        decoder = ImageDecoder(hook: decodeHook, enqueuedHook: decodeEnqueuedHook)
     }
 
     func image(for request: ImageRequest) async throws -> ImageResponse {
@@ -185,14 +222,18 @@ actor SystemImagePipeline: ImagePipeline {
         }
         let subscriber = UUID()
         let task: Task<SendableCGImage, Error>
-        if var current = inFlight[request] {
-            current.subscribers.insert(subscriber)
-            inFlight[request] = current
+        let subscriptions: SharedSubscriptionState
+        if let current = inFlight[request] {
+            current.subscriptions.insert(subscriber)
             task = current.task
+            subscriptions = current.subscriptions
         } else {
             let session = session
             let decoder = decoder
             let cache = cache
+            let state = SharedSubscriptionState()
+            state.insert(subscriber)
+            subscriptions = state
             task = Task.detached(priority: Task.currentPriority) {
                 var urlRequest = URLRequest(url: request.url)
                 urlRequest.cachePolicy = .useProtocolCachePolicy
@@ -203,25 +244,26 @@ actor SystemImagePipeline: ImagePipeline {
                 guard data.count <= Self.maximumEncodedBytes else { throw SystemImagePipelineError.encodedImageTooLarge }
                 let image = try await decoder.decode(data, request: request)
                 try Task.checkCancellation()
-                cache.insert(image, for: request)
+                state.cacheIfEligible { cache.insert(image, for: request) }
                 try Task.checkCancellation()
                 return image
             }
-            inFlight[request] = InFlight(task: task, subscribers: [subscriber])
+            inFlight[request] = InFlight(task: task, subscriptions: state)
         }
 
         return try await withTaskCancellationHandler {
             do {
                 let image = try await task.value
                 try Task.checkCancellation()
-                unsubscribe(subscriber, request: request, cancelWhenEmpty: false)
+                unsubscribe(subscriber, request: request, subscriptions: subscriptions, cancelWhenEmpty: false)
                 return ImageResponse(request: request, image: image.value)
             } catch {
-                unsubscribe(subscriber, request: request, cancelWhenEmpty: true)
+                unsubscribe(subscriber, request: request, subscriptions: subscriptions, cancelWhenEmpty: true)
                 throw error
             }
         } onCancel: {
-            Task { await self.unsubscribe(subscriber, request: request, cancelWhenEmpty: true) }
+            let isEmpty = subscriptions.cancel(subscriber, cache: self.cache, request: request)
+            Task { await self.cleanupCancelledSubscriber(request: request, subscriptions: subscriptions, cancelTask: isEmpty) }
         }
     }
 
@@ -247,14 +289,29 @@ actor SystemImagePipeline: ImagePipeline {
         }
     }
 
-    private func unsubscribe(_ subscriber: UUID, request: ImageRequest, cancelWhenEmpty: Bool) {
-        guard var current = inFlight[request] else { return }
-        current.subscribers.remove(subscriber)
-        if current.subscribers.isEmpty {
+    private func unsubscribe(
+        _ subscriber: UUID,
+        request: ImageRequest,
+        subscriptions: SharedSubscriptionState,
+        cancelWhenEmpty: Bool
+    ) {
+        let isEmpty = subscriptions.finish(subscriber)
+        guard let current = inFlight[request], current.subscriptions === subscriptions else { return }
+        if isEmpty {
             inFlight.removeValue(forKey: request)
             if cancelWhenEmpty { current.task.cancel() }
-        } else {
-            inFlight[request] = current
+        }
+    }
+
+    private func cleanupCancelledSubscriber(
+        request: ImageRequest,
+        subscriptions: SharedSubscriptionState,
+        cancelTask: Bool
+    ) {
+        guard let current = inFlight[request], current.subscriptions === subscriptions else { return }
+        if cancelTask {
+            inFlight.removeValue(forKey: request)
+            current.task.cancel()
         }
     }
 

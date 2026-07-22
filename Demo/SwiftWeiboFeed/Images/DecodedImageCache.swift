@@ -33,4 +33,8 @@ final class DecodedImageCache: @unchecked Sendable {
               image.value.bytesPerRow <= Int.max / image.value.height else { return }
         storage.setObject(Value(image), forKey: Key(request), cost: image.value.bytesPerRow * image.value.height)
     }
+
+    func removeImage(for request: ImageRequest) {
+        storage.removeObject(forKey: Key(request))
+    }
 }
