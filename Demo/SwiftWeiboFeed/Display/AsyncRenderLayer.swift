@@ -35,6 +35,9 @@ private final class WeakLayerBox: @unchecked Sendable {
 typealias BitmapContextFactory = @Sendable (_ width: Int, _ height: Int, _ opaque: Bool) -> BitmapContext?
 
 public final class AsyncRenderLayer: CALayer {
+    private static let maximumBitmapBytes = 64 * 1_024 * 1_024
+    private static let bytesPerPixel = 4
+
     private struct State {
         var identity: RenderIdentity?
         var token: DisplayCancellationToken?
@@ -96,9 +99,8 @@ public final class AsyncRenderLayer: CALayer {
         let layerBox = WeakLayerBox(self)
         executor.execute {
             guard !token.isCancelled else { return }
-            let width = Int((task.size.width * task.scale).rounded())
-            let height = Int((task.size.height * task.scale).rounded())
-            guard width > 0, height > 0, !token.isCancelled,
+            guard let (width, height) = Self.pixelDimensions(size: task.size, scale: task.scale),
+                  !token.isCancelled,
                   let bitmap = factory(width, height, opaque) else { return }
             bitmap.context.scaleBy(x: task.scale, y: task.scale)
             guard !token.isCancelled else { return }
@@ -128,6 +130,22 @@ public final class AsyncRenderLayer: CALayer {
 
     private func isCurrent(_ identity: RenderIdentity, token: DisplayCancellationToken) -> Bool {
         stateLock.withLock { state.identity == identity && state.token === token }
+    }
+
+    private static func pixelDimensions(size: CGSize, scale: CGFloat) -> (Int, Int)? {
+        let scaledWidth = (size.width * scale).rounded()
+        let scaledHeight = (size.height * scale).rounded()
+        let intUpperBound = CGFloat(Int.max)
+        guard scaledWidth.isFinite, scaledHeight.isFinite,
+              scaledWidth > 0, scaledHeight > 0,
+              scaledWidth < intUpperBound, scaledHeight < intUpperBound else { return nil }
+
+        let maximumPixels = maximumBitmapBytes / bytesPerPixel
+        guard scaledWidth <= CGFloat(maximumPixels), scaledHeight <= CGFloat(maximumPixels) else { return nil }
+        let width = Int(scaledWidth)
+        let height = Int(scaledHeight)
+        guard width <= maximumPixels / height else { return nil }
+        return (width, height)
     }
 
     private static func makeBitmapContext(width: Int, height: Int, opaque: Bool) -> BitmapContext? {

@@ -35,3 +35,25 @@ TDD evidence:
 Concerns:
 
 - Runtime test execution remains unverified in this environment due to the simulator launch hang described above; the full suite was therefore not run at runtime. The full app and test targets do compile successfully.
+
+## Review Fix: Bitmap Bounds and True In-Flight Race
+
+Implemented:
+
+- Computes and validates rounded `CGFloat` pixel dimensions before converting either dimension to `Int`.
+- Rejects non-finite, non-positive, and `Int`-unsafe dimensions without allocation or submission.
+- Enforces a 64 MiB RGBA bitmap budget using division-based pixel-count validation, avoiding intermediate integer multiplication overflow and unallocatable contexts.
+- Added overflow coverage for `CGFloat.greatestFiniteMagnitude * scale`, a finite value above `Int.max`, and a finite bitmap exceeding the practical byte budget.
+- Replaced the queued-closure ordering test with a true in-flight race: A enters and blocks inside drawing, B is displayed and commits, then A is released. All waits have bounded timeouts and a deferred release prevents a stuck worker after assertion failure.
+- Corrected the pre-existing invalid-task assertion so every invalid task is required to leave the executor queue empty.
+
+Verification:
+
+- Xcode 27 beta compiled the app and complete test target through the linker with no compile errors; only the existing iOS 16/XCTest 17 deployment warnings were emitted.
+- Focused simulator test execution was attempted twice. The designated iPhone 17e simulator remained stuck while Xcode waited for simulator install/launch workers; `simctl bootstatus` also did not complete. The runs were interrupted without executing tests.
+- The final generic `build-for-testing` compiled and linked both targets but Xcode did not terminate after linking because the same simulator service remained wedged; it was interrupted after producing no errors.
+- `git diff --check`: clean before commit.
+
+Concerns:
+
+- Runtime focused and full-suite results still require a functioning booted simulator. The review regression tests compile, but could not execute in the current simulator-service state.

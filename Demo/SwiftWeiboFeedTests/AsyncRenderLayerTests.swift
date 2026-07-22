@@ -5,21 +5,27 @@ import XCTest
 final class AsyncRenderLayerTests: XCTestCase {
     @MainActor
     func testOlderBlockedRenderCannotOverwriteNewGeneration() async throws {
-        let executor = ControllableDisplayExecutor()
+        let aStarted = DispatchSemaphore(value: 0)
+        let releaseA = DispatchSemaphore(value: 0)
+        defer { releaseA.signal() }
+        let bCommitted = expectation(description: "B commits while A is blocked")
         var commits: [(RenderIdentity, Bool)] = []
-        let layer = AsyncRenderLayer(executor: executor) { identity, _ in
+        let layer = AsyncRenderLayer { identity, _ in
             commits.append((identity, Thread.isMainThread))
+            if identity.generation == 2 { bCommitted.fulfill() }
         }
         let a = identity(generation: 1)
         let b = identity(generation: 2)
+        let blockedA = AsyncDisplayTask(identity: a, size: CGSize(width: 4, height: 4), scale: 2) { _, _ in
+            aStarted.signal()
+            _ = releaseA.wait(timeout: .now() + 2)
+        }
 
-        layer.display(task(identity: a, color: 0x11))
+        layer.display(blockedA)
+        XCTAssertEqual(aStarted.wait(timeout: .now() + 1), .success, "A must enter drawing before B is displayed")
         layer.display(task(identity: b, color: 0x22))
-        XCTAssertEqual(executor.count, 2)
-
-        executor.run(at: 1)
-        await drainMainActor()
-        executor.run(at: 0)
+        await fulfillment(of: [bCommitted], timeout: 1)
+        releaseA.signal()
         await drainMainActor()
 
         XCTAssertEqual(commits.map(\.0), [b])
@@ -48,14 +54,38 @@ final class AsyncRenderLayerTests: XCTestCase {
         let factory = ContextFactorySpy()
         let layer = AsyncRenderLayer(executor: executor, contextFactory: factory.make) { _, _ in XCTFail("invalid task committed") }
 
-        for (index, task) in [
+        for task in [
             AsyncDisplayTask(identity: identity(generation: 1), size: .zero, scale: 2) { _, _ in },
             AsyncDisplayTask(identity: identity(generation: 2), size: CGSize(width: 2, height: 2), scale: 0) { _, _ in },
-        ].enumerated() {
+        ] {
             layer.display(task)
-            XCTAssertEqual(executor.count, index, "invalid work must not be enqueued")
+            XCTAssertEqual(executor.count, 0, "invalid work must not be enqueued")
         }
         XCTAssertTrue(factory.allocations.isEmpty)
+    }
+
+    @MainActor
+    func testScaledDimensionOverflowAndUnsafeBitmapSizesNeverAllocateOrCommit() async {
+        let executor = ControllableDisplayExecutor()
+        let factory = ContextFactorySpy()
+        var commits = 0
+        let layer = AsyncRenderLayer(executor: executor, contextFactory: factory.make) { _, _ in commits += 1 }
+        let overIntMax = CGFloat(Int.max) * 2
+        let tasks = [
+            AsyncDisplayTask(identity: identity(generation: 1), size: CGSize(width: CGFloat.greatestFiniteMagnitude, height: 1), scale: 2) { _, _ in },
+            AsyncDisplayTask(identity: identity(generation: 2), size: CGSize(width: overIntMax, height: 1), scale: 1) { _, _ in },
+            AsyncDisplayTask(identity: identity(generation: 3), size: CGSize(width: 8_193, height: 2_048), scale: 1) { _, _ in },
+        ]
+
+        for (index, task) in tasks.enumerated() {
+            layer.display(task)
+            XCTAssertEqual(executor.count, index + 1)
+            executor.run(at: index)
+            await drainMainActor()
+        }
+
+        XCTAssertTrue(factory.allocations.isEmpty)
+        XCTAssertEqual(commits, 0)
     }
 
     @MainActor
