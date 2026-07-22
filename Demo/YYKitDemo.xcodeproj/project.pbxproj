@@ -22,6 +22,10 @@
 		A1000000000000000000000D /* weibo_7.json in Resources */ = {isa = PBXBuildFile; fileRef = D9700D911BC7C16900F878A4 /* weibo_7.json */; };
 		A1000000000000000000000E /* EmoticonWeibo.bundle in Resources */ = {isa = PBXBuildFile; fileRef = D9971BB31B85023300A7B424 /* EmoticonWeibo.bundle */; };
 		A1000000000000000000000F /* ResourceWeibo.bundle in Resources */ = {isa = PBXBuildFile; fileRef = D9067E361B9AD7AC00F346EB /* ResourceWeibo.bundle */; };
+		A20000000000000000000001 /* FeedFixtureLoader.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000011 /* FeedFixtureLoader.swift */; };
+		A20000000000000000000002 /* FeedModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* FeedModelsTests.swift */; };
+		A20000000000000000000003 /* FeedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* FeedModels.swift */; };
+		A20000000000000000000004 /* FeedIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* FeedIdentity.swift */; };
 		ABDC320D1BEAFB870012A159 /* YYTextTagExample.m in Sources */ = {isa = PBXBuildFile; fileRef = ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
@@ -228,6 +232,10 @@
 		A10000000000000000000014 /* TargetSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetSmokeTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000015 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
 		A10000000000000000000016 /* SwiftWeiboFeedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftWeiboFeedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		A20000000000000000000011 /* FeedFixtureLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFixtureLoader.swift; sourceTree = "<group>"; };
+		A20000000000000000000012 /* FeedModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModelsTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
 		ABDC320B1BEAFB870012A159 /* YYTextTagExample.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextTagExample.h; sourceTree = "<group>"; };
 		ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = YYTextTagExample.m; sourceTree = "<group>"; };
 		D9067DEF1B975D3900F346EB /* YYTextExampleHelper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextExampleHelper.h; sourceTree = "<group>"; };
@@ -594,9 +602,19 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000023 /* App */,
+				A20000000000000000000027 /* Domain */,
 				A10000000000000000000024 /* Resources */,
 			);
 			path = SwiftWeiboFeed;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000027 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000013 /* FeedModels.swift */,
+				A20000000000000000000014 /* FeedIdentity.swift */,
+			);
+			path = Domain;
 			sourceTree = "<group>";
 		};
 		A10000000000000000000023 /* App */ = {
@@ -620,8 +638,18 @@
 			isa = PBXGroup;
 			children = (
 				A10000000000000000000014 /* TargetSmokeTests.swift */,
+				A20000000000000000000012 /* FeedModelsTests.swift */,
+				A20000000000000000000026 /* Fixtures */,
 			);
 			path = SwiftWeiboFeedTests;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000026 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000011 /* FeedFixtureLoader.swift */,
+			);
+			path = Fixtures;
 			sourceTree = "<group>";
 		};
 		D9067E041B98A39200F346EB /* Feed List */ = {
@@ -1389,6 +1417,8 @@
 			files = (
 				A10000000000000000000001 /* AppDelegate.swift in Sources */,
 				A10000000000000000000002 /* SceneDelegate.swift in Sources */,
+				A20000000000000000000003 /* FeedModels.swift in Sources */,
+				A20000000000000000000004 /* FeedIdentity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1397,6 +1427,8 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000003 /* TargetSmokeTests.swift in Sources */,
+				A20000000000000000000001 /* FeedFixtureLoader.swift in Sources */,
+				A20000000000000000000002 /* FeedModelsTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
