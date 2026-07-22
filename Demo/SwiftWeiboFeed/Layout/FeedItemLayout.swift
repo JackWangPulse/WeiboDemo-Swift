@@ -4,14 +4,20 @@ public struct ProfileLayout: Sendable {
     public let frame: CGRect
     public let avatarFrame: CGRect
     public let name: TextLayout
-    public let source: TextLayout
+    public let time: TextLayout?
+    public let source: TextLayout?
+    public let verificationFrame: CGRect?
+    public let accessibilityLabel: String
     public let regions: [InteractionRegion]
 
-    public init(frame: CGRect, avatarFrame: CGRect, name: TextLayout, source: TextLayout, regions: [InteractionRegion]) {
+    public init(frame: CGRect, avatarFrame: CGRect, name: TextLayout, time: TextLayout?, source: TextLayout?, verificationFrame: CGRect?, accessibilityLabel: String, regions: [InteractionRegion]) {
         self.frame = frame
         self.avatarFrame = avatarFrame
         self.name = name
+        self.time = time
         self.source = source
+        self.verificationFrame = verificationFrame
+        self.accessibilityLabel = accessibilityLabel
         self.regions = regions
     }
 }
@@ -100,12 +106,17 @@ public struct FeedItemLayout: Sendable {
     }
 
     public var allFrames: [CGRect] {
-        var frames = [profile.frame, profile.avatarFrame, profile.name.bounds, profile.source.bounds, body.bounds]
+        var frames = [profile.frame, profile.avatarFrame, profile.name.bounds, body.bounds]
+        if let time = profile.time { frames.append(time.bounds) }
+        if let source = profile.source { frames.append(source.bounds) }
+        if let verificationFrame = profile.verificationFrame { frames.append(verificationFrame) }
         frames.append(contentsOf: profile.regions.flatMap(\.rects))
         frames.append(contentsOf: profile.name.storage.origins.map { CGRect(origin: $0, size: .zero) })
-        frames.append(contentsOf: profile.source.storage.origins.map { CGRect(origin: $0, size: .zero) })
+        frames.append(contentsOf: profile.time?.storage.origins.map { CGRect(origin: $0, size: .zero) } ?? [])
+        frames.append(contentsOf: profile.source?.storage.origins.map { CGRect(origin: $0, size: .zero) } ?? [])
         frames.append(contentsOf: profile.name.regions.flatMap(\.rects))
-        frames.append(contentsOf: profile.source.regions.flatMap(\.rects))
+        frames.append(contentsOf: profile.time?.regions.flatMap(\.rects) ?? [])
+        frames.append(contentsOf: profile.source?.regions.flatMap(\.rects) ?? [])
         frames.append(contentsOf: body.storage.origins.map { CGRect(origin: $0, size: .zero) })
         frames.append(contentsOf: body.regions.flatMap(\.rects))
         frames.append(contentsOf: mediaFrames)

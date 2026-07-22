@@ -23,6 +23,8 @@ final class FeedLayoutEngineTests: XCTestCase {
         XCTAssertEqual(first.profile.regions.map(\.action), [.user("1")])
         XCTAssertEqual(first.body.bounds, second.body.bounds)
         XCTAssertEqual(first.body.storage.origins, second.body.storage.origins)
+        XCTAssertEqual(first.allFrames, second.allFrames)
+        XCTAssertEqual(first.body.regions.map(\.action), second.body.regions.map(\.action))
         XCTAssertEqual(startsOnMain.values, [false, false])
         assertFinite(first)
     }
@@ -57,6 +59,17 @@ final class FeedLayoutEngineTests: XCTestCase {
         assertFinite(layout)
     }
 
+    func testForcedNewlineTruncationClipsPartialURLBeforeExactToken() async throws {
+        let text = "1\n2\n3\n4\n5\nhttps://example.com/" + String(repeating: "路径", count: 80) + " tail"
+        let item = try makeItem(text: text)
+        let layout = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(text), parsedRepost: nil, environment: environment())
+        let url = try XCTUnwrap(layout.body.regions.first { if case .url = $0.action { true } else { false } })
+        let expand = try XCTUnwrap(layout.body.regions.first { $0.action == .expand(item.id) })
+        XCTAssertEqual(layout.body.storage.lines.count, 6)
+        XCTAssertEqual(layout.body.storage.lines.count, layout.body.storage.origins.count)
+        XCTAssertLessThanOrEqual(try XCTUnwrap(url.rects.last).maxX, try XCTUnwrap(expand.rects.first).minX + 0.001)
+    }
+
     func testRepostHasContainedBodyAndMedia() async throws {
         let item = try makeItem(text: "Original", repostText: "Reposted @bob", repostPictures: 4)
         let repost = try XCTUnwrap(item.repost)
@@ -85,7 +98,12 @@ final class FeedLayoutEngineTests: XCTestCase {
             XCTAssertEqual(layout.mediaFrames.count, count)
             let expectedColumns = count == 1 ? 1 : (count == 4 ? 2 : 3)
             XCTAssertEqual(Set(layout.mediaFrames.map(\.minX)).count, expectedColumns)
+            XCTAssertEqual(Set(layout.mediaFrames.map(\.minY)).count, count == 1 ? 1 : (count == 4 ? 2 : 3))
             XCTAssertTrue(layout.mediaFrames.allSatisfy { $0.width == $0.height })
+            for (index, frame) in layout.mediaFrames.enumerated() {
+                XCTAssertEqual(frame.minX, layout.mediaFrames[index % expectedColumns].minX, accuracy: 0.001)
+                XCTAssertTrue(layout.mediaFrames.enumerated().allSatisfy { $0.offset == index || !$0.element.intersects(frame) })
+            }
             assertFinite(layout)
         }
     }
@@ -124,6 +142,22 @@ final class FeedLayoutEngineTests: XCTestCase {
         } catch is CancellationError {}
     }
 
+    func testObservedLayoutConcurrencyNeverExceedsTwo() async throws {
+        let tracker = ConcurrencyTracker()
+        let engine = FeedLayoutEngine(layoutStartHook: { tracker.measureBriefWork() })
+        let item = try makeItem(text: "Concurrent")
+        let parsed = FeedTextParser().parse(item.text)
+        let identity = contentIdentity(for: item)
+        let environment = environment()
+        try await withThrowingTaskGroup(of: FeedItemLayout.self) { group in
+            for _ in 0..<12 {
+                group.addTask { try await engine.layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: nil, environment: environment) }
+            }
+            for try await _ in group {}
+        }
+        XCTAssertLessThanOrEqual(tracker.maximum, 2)
+    }
+
     func testProfileCardTagAndRepostCardHaveCompleteContainedGeometry() async throws {
         let item = try makeRichItem()
         let repost = try XCTUnwrap(item.repost)
@@ -140,6 +174,11 @@ final class FeedLayoutEngineTests: XCTestCase {
         XCTAssertTrue(layout.profile.frame.contains(layout.profile.avatarFrame))
         XCTAssertTrue(layout.profile.frame.contains(layout.profile.name.bounds))
         XCTAssertEqual(layout.profile.regions.map(\.action), [.user("1")])
+        XCTAssertNotNil(layout.profile.time)
+        XCTAssertNotNil(layout.profile.source)
+        XCTAssertNotNil(layout.profile.verificationFrame)
+        XCTAssertTrue(layout.profile.regions[0].accessibilityLabel.contains("verified"))
+        XCTAssertTrue(layout.profile.accessibilityLabel.contains("iPhone客户端"))
         let card = try XCTUnwrap(layout.card)
         XCTAssertTrue(card.frame.contains(card.text.bounds))
         XCTAssertTrue(card.imageFrame.map(card.frame.contains) ?? false)
@@ -147,9 +186,19 @@ final class FeedLayoutEngineTests: XCTestCase {
         let tag = try XCTUnwrap(layout.tag)
         XCTAssertTrue(tag.frame.contains(tag.text.bounds))
         XCTAssertEqual(tag.regions.map(\.action), [.tag("Swift")])
+        XCTAssertEqual(tag.regions.first?.accessibilityLabel, "Swift", "Only the first tag is rendered for original-demo parity")
         let repostCard = try XCTUnwrap(layout.repost?.card)
         XCTAssertTrue(try XCTUnwrap(layout.repost).frame.contains(repostCard.frame))
         assertFinite(layout)
+    }
+
+    func testLongUnicodeSingleLineLayoutsStayWithinDeclaredWidth() async throws {
+        let item = try makeRichItem(longValues: true)
+        let layout = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: FeedTextParser().parse(item.repost!.text), environment: environment(width: 240))
+        for text in [layout.profile.name, layout.card!.text, layout.tag!.text] {
+            XCTAssertEqual(text.storage.lines.count, text.storage.origins.count)
+            XCTAssertLessThanOrEqual(CGFloat(CTLineGetTypographicBounds(text.storage.lines[0], nil, nil, nil)), text.bounds.width + 0.001)
+        }
     }
     func testLayoutEnvironmentUsesPixelWidthAndStableContentSizeName() {
         let environment = FeedLayoutEnvironment(
@@ -278,7 +327,7 @@ final class FeedLayoutEngineTests: XCTestCase {
 
     private func emptyProfile() -> ProfileLayout {
         let text = TextLayout(storage: CoreTextLayoutStorage(lines: [], origins: []), bounds: .zero, regions: [])
-        return ProfileLayout(frame: .zero, avatarFrame: .zero, name: text, source: text, regions: [])
+        return ProfileLayout(frame: .zero, avatarFrame: .zero, name: text, time: nil, source: nil, verificationFrame: nil, accessibilityLabel: "", regions: [])
     }
 
     private func makeItem(text: String, pictures: Int = 0, repostText: String? = nil, repostPictures: Int = 0) throws -> FeedItem {
@@ -293,8 +342,9 @@ final class FeedLayoutEngineTests: XCTestCase {
         return try JSONDecoder.weibo.decode(FeedItem.self, from: Data(json.utf8))
     }
 
-    private func makeRichItem() throws -> FeedItem {
-        let json = #"{"id":"item","user":{"id":"1","name":"Alice"},"text":"Body","page_info":{"page_title":"Main card","page_pic":"https://example.com/main.jpg","page_url":"https://example.com/card"},"tag_struct":[{"tag_name":"Swift"}],"retweeted_status":{"id":"repost","user":{"id":"2","name":"Bob"},"text":"Repost","page_info":{"page_title":"Repost card","page_url":"https://example.com/repost"}}}"#
+    private func makeRichItem(longValues: Bool = false) throws -> FeedItem {
+        let suffix = longValues ? String(repeating: "👩🏽‍💻超长", count: 80) : ""
+        let json = "{\"id\":\"item\",\"created_at\":\"Fri Sep 11 20:41:01 +0800 2015\",\"source\":\"<a>iPhone客户端</a>\",\"user\":{\"id\":\"1\",\"name\":\"Alice\(suffix)\",\"verified\":true,\"verified_reason\":\"Author\"},\"text\":\"Body\",\"page_info\":{\"page_title\":\"Main card\(suffix)\",\"page_pic\":\"https://example.com/main.jpg\",\"page_url\":\"https://example.com/card\"},\"tag_struct\":[{\"tag_name\":\"Swift\(suffix)\"},{\"tag_name\":\"Ignored\"}],\"retweeted_status\":{\"id\":\"repost\",\"user\":{\"id\":\"2\",\"name\":\"Bob\"},\"text\":\"Repost\",\"page_info\":{\"page_title\":\"Repost card\",\"page_url\":\"https://example.com/repost\"}}}"
         return try JSONDecoder.weibo.decode(FeedItem.self, from: Data(json.utf8))
     }
 
@@ -307,6 +357,14 @@ final class FeedLayoutEngineTests: XCTestCase {
         XCTAssertTrue(interactionRects.allSatisfy(\.isFiniteAndNonNegative), file: file, line: line)
         XCTAssertTrue(origins.allSatisfy { $0.x.isFinite && $0.y.isFinite && $0.x >= 0 && $0.y >= 0 }, file: file, line: line)
         XCTAssertTrue(layout.allFrames.allSatisfy { $0.maxY <= layout.height }, file: file, line: line)
+        XCTAssertTrue(layout.allFrames.allSatisfy { $0.maxX <= layout.toolbar.frame.width + 0.001 }, file: file, line: line)
+        var texts = [layout.profile.name, layout.body]
+        if let time = layout.profile.time { texts.append(time) }
+        if let source = layout.profile.source { texts.append(source) }
+        if let repost = layout.repost { texts.append(repost.body) }
+        if let card = layout.card { texts.append(card.text) }
+        if let tag = layout.tag { texts.append(tag.text) }
+        XCTAssertTrue(texts.allSatisfy { $0.storage.lines.count == $0.storage.origins.count }, file: file, line: line)
     }
 }
 
@@ -316,4 +374,17 @@ private final class LockedValues<Element: Sendable>: @unchecked Sendable {
 
     var values: [Element] { lock.withLock { storage } }
     func append(_ value: Element) { lock.withLock { storage.append(value) } }
+}
+
+private final class ConcurrencyTracker: @unchecked Sendable {
+    private let lock = NSLock()
+    private var active = 0
+    private var recordedMaximum = 0
+    var maximum: Int { lock.withLock { recordedMaximum } }
+
+    func measureBriefWork() {
+        lock.withLock { active += 1; recordedMaximum = max(recordedMaximum, active) }
+        Thread.sleep(forTimeInterval: 0.03)
+        lock.withLock { active -= 1 }
+    }
 }

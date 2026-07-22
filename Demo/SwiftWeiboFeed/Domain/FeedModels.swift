@@ -14,12 +14,18 @@ public struct FeedUser: Decodable, Hashable, Sendable {
     public let id: FeedID
     public let name: String
     public let avatarURL: URL?
+    public let isVerified: Bool
+    public let verifiedType: Int?
+    public let verifiedReason: String?
 
     private enum CodingKeys: String, CodingKey {
         case id, name
         case screenName = "screen_name"
         case avatarURL = "avatar_large"
         case profileImageURL = "profile_image_url"
+        case isVerified = "verified"
+        case verifiedType = "verified_type"
+        case verifiedReason = "verified_reason"
     }
 
     public init(from decoder: Decoder) throws {
@@ -32,6 +38,9 @@ public struct FeedUser: Decodable, Hashable, Sendable {
         }
         avatarURL = container.lossyURL(forKey: .avatarURL)
             ?? container.lossyURL(forKey: .profileImageURL)
+        isVerified = (try? container.decodeIfPresent(Bool.self, forKey: .isVerified)) ?? false
+        verifiedType = try? container.decodeIfPresent(Int.self, forKey: .verifiedType)
+        verifiedReason = try? container.decodeIfPresent(String.self, forKey: .verifiedReason)
     }
 }
 
@@ -120,6 +129,8 @@ public struct FeedItem: Decodable, Hashable, Sendable {
     public let repostCount: Int
     public let commentCount: Int
     public let likeCount: Int
+    public let createdAt: Date?
+    public let source: String?
 
     private let repostStorage: FeedItemRepost?
 
@@ -132,6 +143,8 @@ public struct FeedItem: Decodable, Hashable, Sendable {
         case repostCount = "reposts_count"
         case commentCount = "comments_count"
         case likeCount = "attitudes_count"
+        case createdAt = "created_at"
+        case source
     }
 
     public init(from decoder: Decoder) throws {
@@ -148,5 +161,21 @@ public struct FeedItem: Decodable, Hashable, Sendable {
         repostCount = (try? container.decodeIfPresent(Int.self, forKey: .repostCount)) ?? 0
         commentCount = (try? container.decodeIfPresent(Int.self, forKey: .commentCount)) ?? 0
         likeCount = (try? container.decodeIfPresent(Int.self, forKey: .likeCount)) ?? 0
+        let createdAtString = try? container.decodeIfPresent(String.self, forKey: .createdAt)
+        createdAt = createdAtString.flatMap(Self.parseWeiboDate)
+        source = (try? container.decodeIfPresent(String.self, forKey: .source)).flatMap(Self.normalizedSource)
+    }
+
+    private static func parseWeiboDate(_ value: String) -> Date? {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "EEE MMM dd HH:mm:ss Z yyyy"
+        return formatter.date(from: value)
+    }
+
+    private static func normalizedSource(_ raw: String) -> String? {
+        let normalized = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return normalized.isEmpty ? nil : normalized
     }
 }

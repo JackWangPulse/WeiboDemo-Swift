@@ -33,5 +33,27 @@ final class FeedModelsTests: XCTestCase {
         XCTAssertEqual(item.repostCount, 0)
         XCTAssertEqual(item.commentCount, 0)
         XCTAssertEqual(item.likeCount, 0)
+        XCTAssertNil(item.createdAt)
+        XCTAssertNil(item.source)
+        XCTAssertFalse(item.user.isVerified)
+    }
+
+    func testDecodesProfileMetadataAndNormalizesHTMLSource() throws {
+        let json = #"{"statuses":[{"id":"1","created_at":"Fri Sep 11 20:41:01 +0800 2015","source":"<a href=\"https://weibo.com\">iPhone客户端</a>","text":"hello","user":{"id":"2","name":"A","verified":true,"verified_type":0,"verified_reason":"Author"}}]}"#.data(using: .utf8)!
+        let item = try JSONDecoder.weibo.decode(FeedPage.self, from: json).items[0]
+        XCTAssertNotNil(item.createdAt)
+        XCTAssertEqual(item.source, "iPhone客户端")
+        XCTAssertTrue(item.user.isVerified)
+        XCTAssertEqual(item.user.verifiedType, 0)
+        XCTAssertEqual(item.user.verifiedReason, "Author")
+    }
+
+    func testMalformedOptionalProfileMetadataIsTolerated() throws {
+        let json = #"{"statuses":[{"id":"1","created_at":"not-a-date","source":"<a></a>","text":"hello","user":{"id":"2","name":"A","verified":"bad","verified_type":"bad"}}]}"#.data(using: .utf8)!
+        let item = try JSONDecoder.weibo.decode(FeedPage.self, from: json).items[0]
+        XCTAssertNil(item.createdAt)
+        XCTAssertNil(item.source)
+        XCTAssertFalse(item.user.isVerified)
+        XCTAssertNil(item.user.verifiedType)
     }
 }

@@ -54,6 +54,27 @@ Verification:
 - Full `SwiftWeiboFeed` scheme tests: passed on the same simulator (exit 0).
 - `git diff --check`: passed.
 
-Remaining note:
+The earlier profile metadata limitation was resolved by the final review cycle below.
 
-- The phase-one domain model currently has no timestamp/source fields, so `ProfileLayout.source` uses a deterministic `Weibo` placeholder until the domain DTO is expanded by a later task.
+## Final Review Fix Cycle
+
+Status: complete
+
+Commit: pending at time of report update
+
+Implemented:
+
+- Added tolerant optional `createdAt` and normalized HTML `source` decoding to `FeedItem`; added tolerant verification flag/type/reason decoding to `FeedUser`, with bundled-fixture, valid-metadata, and malformed-metadata coverage.
+- Replaced the fabricated profile source with optional time/source layouts, optional verification geometry, and a complete profile accessibility label. Missing metadata now remains absent.
+- Kept one optional `TagLayout` from `tags.first`, with an implementation comment and test documenting intentional parity with the original YYKit Weibo demo.
+- Rebuilt the truncated sixth line from an explicit attributed visible prefix plus `… More`; semantic ranges are clipped to that prefix and the expand rectangle starts at the measured prefix width. Added forced-newline, partial-URL, and complex-Unicode cases.
+- Made single-line CoreText layouts width-aware, including zero/narrow-width handling, and verified long Unicode profile/card/tag lines never exceed declared bounds.
+- Added observed concurrency (`<= 2`), all-frame repeatability, exact grid rows/columns/non-overlap, owner width/height containment, and line/origin-count checks.
+
+Exact verification evidence:
+
+- Focused `FeedModelsTests` + `FeedLayoutEngineTests` on iPhone 17 Pro simulator: `xcodebuild` exit 0.
+- Full `SwiftWeiboFeed` scheme on iPhone 17 Pro simulator after final accessibility changes: `xcodebuild` exit 0.
+- `git diff --check`: clean.
+
+Concerns: none known within Task 5 scope.

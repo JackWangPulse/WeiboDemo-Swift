@@ -99,6 +99,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
 
         let card = try item.card.map { try makeCardLayout($0, x: inset, y: cursor, width: contentWidth, cancellation: cancellation) }
         if let card { cursor = card.frame.maxY + 12 }
+        // Match the original YYKit Weibo demo, which intentionally renders only the first tag.
         let tag = try item.tags.first.map { try makeTagLayout($0, x: inset, y: cursor, width: contentWidth, cancellation: cancellation) }
         if let tag { cursor = tag.frame.maxY + 12 }
         try checkCancellation(cancellation)
@@ -131,15 +132,32 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         try checkCancellation(cancellation)
         let frame = CGRect(x: 0, y: 0, width: width, height: 64)
         let avatar = CGRect(x: 12, y: 12, width: 40, height: 40)
+        let verificationFrame = item.user.isVerified ? CGRect(x: 48, y: 40, width: 12, height: 12) : nil
         let name = makeSingleLineText(item.user.name, x: 64, y: 12, width: max(0, width - 76), color: .label)
-        let source = makeSingleLineText("Weibo", x: 64, y: 34, width: max(0, width - 76), color: .secondaryLabel, fontSize: 12)
+        let timeText = item.createdAt.map(Self.formatProfileDate)
+        let time = timeText.map { makeSingleLineText($0, x: 64, y: 34, width: 92, color: .secondaryLabel, fontSize: 12) }
+        let sourceX = time == nil ? 64 : 160
+        let source = item.source.map { makeSingleLineText($0, x: CGFloat(sourceX), y: 34, width: max(0, width - CGFloat(sourceX) - 12), color: .secondaryLabel, fontSize: 12) }
+        let verificationDescription = item.user.verifiedReason.map { ", verified, \($0)" } ?? (item.user.isVerified ? ", verified" : "")
+        let metadataDescription = [timeText, item.source].compactMap { $0 }.joined(separator: ", ")
+        let accessibilityLabel = item.user.name + verificationDescription + (metadataDescription.isEmpty ? "" : ", " + metadataDescription)
         return ProfileLayout(
             frame: frame,
             avatarFrame: avatar,
             name: name,
+            time: time,
             source: source,
-            regions: [InteractionRegion(rects: [avatar, name.bounds], action: .user(item.user.id.rawValue), accessibilityLabel: item.user.name)]
+            verificationFrame: verificationFrame,
+            accessibilityLabel: accessibilityLabel,
+            regions: [InteractionRegion(rects: [avatar, name.bounds], action: .user(item.user.id.rawValue), accessibilityLabel: accessibilityLabel)]
         )
+    }
+
+    private static func formatProfileDate(_ date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "MM-dd HH:mm"
+        return formatter.string(from: date)
     }
 
     private static func makeCardLayout(_ card: FeedCard, x: CGFloat, y: CGFloat, width: CGFloat, cancellation: LayoutCancellation) throws -> CardLayout {
@@ -161,8 +179,22 @@ public final class FeedLayoutEngine: @unchecked Sendable {
     }
 
     private static func makeSingleLineText(_ value: String, x: CGFloat, y: CGFloat, width: CGFloat, color: UIColor, fontSize: CGFloat = 16) -> TextLayout {
+        guard width > 0 else {
+            return TextLayout(storage: CoreTextLayoutStorage(lines: [], origins: []), bounds: CGRect(x: x, y: y, width: 0, height: 0), regions: [])
+        }
         let attributed = NSAttributedString(string: value, attributes: [.font: UIFont.systemFont(ofSize: fontSize), .foregroundColor: color])
-        let line = CTLineCreateWithAttributedString(attributed)
+        let original = CTLineCreateWithAttributedString(attributed)
+        let token = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: [.font: UIFont.systemFont(ofSize: fontSize), .foregroundColor: color]))
+        let originalWidth = CGFloat(CTLineGetTypographicBounds(original, nil, nil, nil))
+        let tokenWidth = CGFloat(CTLineGetTypographicBounds(token, nil, nil, nil))
+        let line: CTLine
+        if originalWidth <= width {
+            line = original
+        } else if tokenWidth <= width, let truncated = CTLineCreateTruncatedLine(original, Double(width), .end, token) {
+            line = truncated
+        } else {
+            line = CTLineCreateWithAttributedString(NSAttributedString(string: ""))
+        }
         return TextLayout(storage: CoreTextLayoutStorage(lines: [line], origins: [CGPoint(x: x, y: y + 16)]), bounds: CGRect(x: x, y: y, width: width, height: 20), regions: [])
     }
 
@@ -207,7 +239,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let truncated = index < length
         var visibleUTF16End = length
         var expandRect: CGRect?
-        if truncated, let finalLine = lines.last, let origin = origins.last {
+        if truncated, let finalRange = ranges.last, let origin = origins.last {
             let token = NSAttributedString(
                 string: "… More",
                 attributes: [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor.systemBlue]
@@ -215,13 +247,21 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let tokenLine = CTLineCreateWithAttributedString(token)
             let tokenWidth = CGFloat(CTLineGetTypographicBounds(tokenLine, nil, nil, nil))
             let visibleWidth = max(0, width - tokenWidth)
-            let visibleIndex = CTLineGetStringIndexForPosition(finalLine, CGPoint(x: visibleWidth, y: 0))
-            visibleUTF16End = max(ranges.last?.location ?? 0, visibleIndex)
+            let prefixCount = CTTypesetterSuggestClusterBreak(typesetter, finalRange.location, Double(visibleWidth))
+            visibleUTF16End = min(finalRange.location + prefixCount, finalRange.location + finalRange.length)
+            while visibleUTF16End > finalRange.location,
+                  CharacterSet.newlines.contains(UnicodeScalar((text.string as NSString).character(at: visibleUTF16End - 1))!) {
+                visibleUTF16End -= 1
+            }
             if let lastRange = ranges.indices.last {
                 ranges[lastRange].length = visibleUTF16End - ranges[lastRange].location
             }
-            lines[lines.count - 1] = CTLineCreateTruncatedLine(finalLine, Double(width), .end, tokenLine) ?? finalLine
-            expandRect = CGRect(x: boundsX(x, width: width, tokenWidth: tokenWidth), y: origin.y - 16, width: tokenWidth, height: 20)
+            let explicitLine = NSMutableAttributedString(attributedString: text.attributedSubstring(from: NSRange(location: finalRange.location, length: visibleUTF16End - finalRange.location)))
+            explicitLine.append(token)
+            lines[lines.count - 1] = CTLineCreateWithAttributedString(explicitLine)
+            let prefixLine = CTLineCreateWithAttributedString(text.attributedSubstring(from: NSRange(location: finalRange.location, length: visibleUTF16End - finalRange.location)))
+            let tokenOffset = CGFloat(CTLineGetTypographicBounds(prefixLine, nil, nil, nil))
+            expandRect = CGRect(x: x + tokenOffset, y: origin.y - 16, width: tokenWidth, height: 20)
         }
         let bounds = CGRect(x: x, y: y, width: width, height: CGFloat(lines.count) * 20)
         var regions = parsed.spans.compactMap { span -> InteractionRegion? in
@@ -241,10 +281,6 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             ))
         }
         return TextLayout(storage: CoreTextLayoutStorage(lines: lines, origins: origins), bounds: bounds, regions: regions)
-    }
-
-    private static func boundsX(_ x: CGFloat, width: CGFloat, tokenWidth: CGFloat) -> CGFloat {
-        x + max(0, width - tokenWidth)
     }
 
     private static func interactionRects(
