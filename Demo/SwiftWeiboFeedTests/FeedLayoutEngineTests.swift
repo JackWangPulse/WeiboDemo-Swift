@@ -67,6 +67,7 @@ final class FeedLayoutEngineTests: XCTestCase {
         let expand = try XCTUnwrap(layout.body.regions.first { $0.action == .expand(item.id) })
         XCTAssertEqual(layout.body.storage.lines.count, 6)
         XCTAssertEqual(layout.body.storage.lines.count, layout.body.storage.origins.count)
+        XCTAssertEqual(try XCTUnwrap(url.rects.first).minX, layout.body.bounds.minX, accuracy: 0.001, "The rebuilt sixth-line CTLine must translate absolute source indices to its local index space")
         XCTAssertLessThanOrEqual(try XCTUnwrap(url.rects.last).maxX, try XCTUnwrap(expand.rects.first).minX + 0.001)
     }
 

@@ -174,7 +174,21 @@ public struct FeedItem: Decodable, Hashable, Sendable {
     }
 
     private static func normalizedSource(_ raw: String) -> String? {
-        let normalized = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        var normalized = raw.replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
+        let entities = ["&amp;": "&", "&quot;": "\"", "&apos;": "'", "&lt;": "<", "&gt;": ">"]
+        for (entity, value) in entities { normalized = normalized.replacingOccurrences(of: entity, with: value) }
+        if let expression = try? NSRegularExpression(pattern: "&#(x[0-9A-Fa-f]+|[0-9]+);") {
+            let matches = expression.matches(in: normalized, range: NSRange(normalized.startIndex..., in: normalized))
+            for match in matches.reversed() {
+                let source = normalized as NSString
+                let value = source.substring(with: match.range(at: 1))
+                let radix = value.hasPrefix("x") ? 16 : 10
+                let digits = value.hasPrefix("x") ? String(value.dropFirst()) : value
+                guard let scalarValue = UInt32(digits, radix: radix), let scalar = UnicodeScalar(scalarValue) else { continue }
+                normalized = (normalized as NSString).replacingCharacters(in: match.range, with: String(scalar))
+            }
+        }
+        normalized = normalized
             .trimmingCharacters(in: .whitespacesAndNewlines)
         return normalized.isEmpty ? nil : normalized
     }

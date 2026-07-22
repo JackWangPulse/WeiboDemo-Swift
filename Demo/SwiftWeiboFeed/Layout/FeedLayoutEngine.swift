@@ -224,6 +224,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         var lines = [CTLine]()
         var origins = [CGPoint]()
         var ranges = [CFRange]()
+        var indexBases = [Int]()
         var index = 0
         let length = text.length
         let maximumLines = 6
@@ -234,6 +235,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             lines.append(CTTypesetterCreateLine(typesetter, range))
             origins.append(CGPoint(x: x, y: y + CGFloat(lines.count - 1) * 20 + 16))
             ranges.append(range)
+            indexBases.append(0)
             index += range.length
         }
         let truncated = index < length
@@ -259,6 +261,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let explicitLine = NSMutableAttributedString(attributedString: text.attributedSubstring(from: NSRange(location: finalRange.location, length: visibleUTF16End - finalRange.location)))
             explicitLine.append(token)
             lines[lines.count - 1] = CTLineCreateWithAttributedString(explicitLine)
+            indexBases[indexBases.count - 1] = finalRange.location
             let prefixLine = CTLineCreateWithAttributedString(text.attributedSubstring(from: NSRange(location: finalRange.location, length: visibleUTF16End - finalRange.location)))
             let tokenOffset = CGFloat(CTLineGetTypographicBounds(prefixLine, nil, nil, nil))
             expandRect = CGRect(x: x + tokenOffset, y: origin.y - 16, width: tokenWidth, height: 20)
@@ -269,7 +272,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let semanticRange = NSRange(span.range, in: parsed.source)
             let clipped = NSIntersectionRange(semanticRange, NSRange(location: 0, length: visibleUTF16End))
             guard clipped.length > 0 else { return nil }
-            let rects = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins)
+            let rects = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins, indexBases: indexBases)
             guard !rects.isEmpty else { return nil }
             return InteractionRegion(rects: rects, action: action, accessibilityLabel: String(parsed.source[span.range]))
         }
@@ -287,14 +290,18 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         for range: NSRange,
         lineRanges: [CFRange],
         lines: [CTLine],
-        origins: [CGPoint]
+        origins: [CGPoint],
+        indexBases: [Int]
     ) -> [CGRect] {
-        zip(zip(lineRanges, lines), origins).compactMap { pair, origin in
-            let lineRange = NSRange(location: pair.0.location, length: pair.0.length)
+        lineRanges.indices.compactMap { lineIndex in
+            let lineRange = NSRange(location: lineRanges[lineIndex].location, length: lineRanges[lineIndex].length)
             let intersection = NSIntersectionRange(range, lineRange)
             guard intersection.length > 0 else { return nil }
-            let start = CGFloat(CTLineGetOffsetForStringIndex(pair.1, intersection.location, nil))
-            let end = CGFloat(CTLineGetOffsetForStringIndex(pair.1, NSMaxRange(intersection), nil))
+            let line = lines[lineIndex]
+            let origin = origins[lineIndex]
+            let indexBase = indexBases[lineIndex]
+            let start = CGFloat(CTLineGetOffsetForStringIndex(line, intersection.location - indexBase, nil))
+            let end = CGFloat(CTLineGetOffsetForStringIndex(line, NSMaxRange(intersection) - indexBase, nil))
             return CGRect(x: origin.x + min(start, end), y: origin.y - 16, width: max(abs(end - start), 1), height: 20)
         }
     }

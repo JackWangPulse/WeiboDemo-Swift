@@ -39,10 +39,10 @@ final class FeedModelsTests: XCTestCase {
     }
 
     func testDecodesProfileMetadataAndNormalizesHTMLSource() throws {
-        let json = #"{"statuses":[{"id":"1","created_at":"Fri Sep 11 20:41:01 +0800 2015","source":"<a href=\"https://weibo.com\">iPhone客户端</a>","text":"hello","user":{"id":"2","name":"A","verified":true,"verified_type":0,"verified_reason":"Author"}}]}"#.data(using: .utf8)!
+        let json = #"{"statuses":[{"id":"1","created_at":"Fri Sep 11 20:41:01 +0800 2015","source":"<a href=\"https://weibo.com\">Foo &amp; Bar &#x4E2D;&#25991;</a>","text":"hello","user":{"id":"2","name":"A","verified":true,"verified_type":0,"verified_reason":"Author"}}]}"#.data(using: .utf8)!
         let item = try JSONDecoder.weibo.decode(FeedPage.self, from: json).items[0]
         XCTAssertNotNil(item.createdAt)
-        XCTAssertEqual(item.source, "iPhone客户端")
+        XCTAssertEqual(item.source, "Foo & Bar 中文")
         XCTAssertTrue(item.user.isVerified)
         XCTAssertEqual(item.user.verifiedType, 0)
         XCTAssertEqual(item.user.verifiedReason, "Author")

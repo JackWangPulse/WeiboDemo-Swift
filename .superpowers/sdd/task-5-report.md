@@ -78,3 +78,17 @@ Exact verification evidence:
 - `git diff --check`: clean.
 
 Concerns: none known within Task 5 scope.
+
+## Final CoreText Index-Base Fix
+
+Status: complete
+
+- Added an explicit CoreText index base for each line. Normal typesetter lines retain absolute source indices; the rebuilt sixth line translates absolute semantic intersections into its local substring index space before asking CoreText for offsets.
+- Strengthened the forced-newline partial-URL test to assert the first visible URL glyph begins exactly at the sixth-line origin and its final hit rect ends before the measured expand token.
+- Extended source normalization to decode common named HTML entities and decimal/hex numeric entities after removing markup.
+
+Verification:
+
+- Focused `FeedModelsTests` + `FeedLayoutEngineTests`: exit 0 on iPhone 17 Pro simulator.
+- Full `SwiftWeiboFeed` scheme: exit 0 on iPhone 17 Pro simulator.
+- `git diff --check`: clean.
