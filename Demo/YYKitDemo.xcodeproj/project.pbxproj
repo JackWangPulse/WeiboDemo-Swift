@@ -26,6 +26,8 @@
 		A20000000000000000000002 /* FeedModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* FeedModelsTests.swift */; };
 		A20000000000000000000003 /* FeedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* FeedModels.swift */; };
 		A20000000000000000000004 /* FeedIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* FeedIdentity.swift */; };
+		A80000000000000000000001 /* FeedRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000011 /* FeedRepository.swift */; };
+		A80000000000000000000002 /* FeedRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000012 /* FeedRepositoryTests.swift */; };
 		A30000000000000000000001 /* FeedTextParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* FeedTextParserTests.swift */; };
 		A30000000000000000000002 /* FeedAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* FeedAction.swift */; };
 		A30000000000000000000003 /* ParsedFeedText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ParsedFeedText.swift */; };
@@ -274,6 +276,8 @@
 		A70000000000000000000015 /* SystemImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemImagePipeline.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
+		A80000000000000000000011 /* FeedRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepository.swift; sourceTree = "<group>"; };
+		A80000000000000000000012 /* FeedRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepositoryTests.swift; sourceTree = "<group>"; };
 		ABDC320B1BEAFB870012A159 /* YYTextTagExample.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextTagExample.h; sourceTree = "<group>"; };
 		ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = YYTextTagExample.m; sourceTree = "<group>"; };
 		D9067DEF1B975D3900F346EB /* YYTextExampleHelper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextExampleHelper.h; sourceTree = "<group>"; };
@@ -698,6 +702,7 @@
 			children = (
 				A20000000000000000000013 /* FeedModels.swift */,
 				A20000000000000000000014 /* FeedIdentity.swift */,
+				A80000000000000000000011 /* FeedRepository.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -722,6 +727,7 @@
 		A10000000000000000000025 /* SwiftWeiboFeedTests */ = {
 			isa = PBXGroup;
 			children = (
+				A80000000000000000000012 /* FeedRepositoryTests.swift */,
 				A70000000000000000000011 /* SystemImagePipelineTests.swift */,
 				A10000000000000000000014 /* TargetSmokeTests.swift */,
 				A20000000000000000000012 /* FeedModelsTests.swift */,
@@ -1508,6 +1514,7 @@
 				A10000000000000000000002 /* SceneDelegate.swift in Sources */,
 				A20000000000000000000003 /* FeedModels.swift in Sources */,
 				A20000000000000000000004 /* FeedIdentity.swift in Sources */,
+				A80000000000000000000001 /* FeedRepository.swift in Sources */,
 				A30000000000000000000002 /* FeedAction.swift in Sources */,
 				A30000000000000000000003 /* ParsedFeedText.swift in Sources */,
 				A30000000000000000000004 /* FeedTextParser.swift in Sources */,
@@ -1533,6 +1540,7 @@
 				A10000000000000000000003 /* TargetSmokeTests.swift in Sources */,
 				A20000000000000000000001 /* FeedFixtureLoader.swift in Sources */,
 				A20000000000000000000002 /* FeedModelsTests.swift in Sources */,
+				A80000000000000000000002 /* FeedRepositoryTests.swift in Sources */,
 				A30000000000000000000001 /* FeedTextParserTests.swift in Sources */,
 				A40000000000000000000001 /* FeedLayoutEngineTests.swift in Sources */,
 				A60000000000000000000001 /* AsyncRenderLayerTests.swift in Sources */,
