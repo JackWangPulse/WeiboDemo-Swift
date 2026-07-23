@@ -140,14 +140,6 @@ enum FeedSnapshotCase: String, CaseIterable, Sendable {
     case richSemanticText = "rich-semantic-text", imagePlaceholder = "image-placeholder", imageFailure = "image-failure"
 }
 
-enum FeedSnapshotReference {
-    static let iPhone11Width: CGFloat = 414
-    // A checked-in, valid 1px PNG sentinel per named reference. Full-size captures
-    // are regenerated only by the documented device acceptance workflow.
-    private static let sentinel = Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScL4WQAAAABJRU5ErkJggg==")!
-    static func pngData(for snapshot: FeedSnapshotCase) -> Data? { sentinel }
-}
-
 enum SnapshotComparator {
     /// Returns a PNG diff path when any channel differs by more than the documented
     /// one-level antialiasing tolerance. Dimension changes always fail.
@@ -170,6 +162,8 @@ enum SnapshotComparator {
     private static func writeDiff(reference: CGImage, candidate: CGImage, name: String) throws -> URL {
         let width = max(reference.width, candidate.width), height = max(reference.height, candidate.height)
         var bytes = [UInt8](repeating: 0, count: width * height * 4)
+        // Non-overlap caused by a dimension change is always visible red.
+        for pixel in 0..<(width * height) { bytes[pixel * 4] = 255; bytes[pixel * 4 + 3] = 255 }
         let lhs = try rgba(reference), rhs = try rgba(candidate)
         for y in 0..<min(reference.height, candidate.height) {
             for x in 0..<min(reference.width, candidate.width) {

@@ -301,8 +301,11 @@ actor SystemImagePipeline: ImagePipeline {
         }
     }
 
-    func handleMemoryPressure() {
+    func clearDecodedCache() {
         cache.removeAll()
+    }
+
+    func cancelAllPrefetch() {
         let tasks = prefetchTasks.values.compactMap(\.task)
         prefetchTasks.removeAll()
         tasks.forEach { $0.cancel() }

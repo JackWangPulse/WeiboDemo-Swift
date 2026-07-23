@@ -73,12 +73,16 @@ public final class AsyncRenderLayer: CALayer {
     init(
         executor: any DisplayExecutor = RenderQueueExecutor.shared,
         contextFactory: @escaping BitmapContextFactory = AsyncRenderLayer.makeBitmapContext,
-        commit: @escaping @MainActor (RenderIdentity, CGImage) -> Void
+        commit: (@MainActor (RenderIdentity, CGImage) -> Void)? = nil
     ) {
         self.executor = executor
         self.contextFactory = contextFactory
         commitObserver = commit
         super.init()
+    }
+
+    convenience init(_ commit: @escaping @MainActor (RenderIdentity, CGImage) -> Void) {
+        self.init(executor: RenderQueueExecutor.shared, contextFactory: Self.makeBitmapContext, commit: commit)
     }
 
     @MainActor

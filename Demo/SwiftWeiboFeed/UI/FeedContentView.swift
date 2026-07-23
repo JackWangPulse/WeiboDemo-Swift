@@ -144,7 +144,7 @@ public final class FeedContentView: UIView {
         if let repost = entry.layout.repost { frames += repost.mediaFrames; if let image = repost.card?.imageFrame { frames.append(image) } }
         if let image = entry.layout.card?.imageFrame { frames.append(image) }
         imageLayers = frames.map { frame in
-            let node = CALayer(); node.frame = frame; node.contentsGravity = .resizeAspectFill; node.masksToBounds = true; layer.addSublayer(node); return node
+            let node = CALayer(); node.frame = frame; node.contentsGravity = .resizeAspectFill; node.masksToBounds = true; node.backgroundColor = UIColor.systemGray5.cgColor; layer.addSublayer(node); return node
         }
         let mediaCount = entry.layout.mediaFrames.count + (entry.layout.repost?.mediaFrames.count ?? 0)
         mediaLayers = Array(imageLayers.dropFirst().prefix(mediaCount))

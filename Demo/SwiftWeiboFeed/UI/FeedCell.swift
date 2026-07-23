@@ -39,7 +39,10 @@ public final class FeedCell: UITableViewCell {
                     try Task.checkCancellation()
                     guard let self, let node, self.representedID == entry.item.id, self.generation == capturedGeneration, response.request == request else { return }
                     node.contentsScale = scale; node.contents = response.image
-                } catch {}
+                } catch {
+                    guard let self, let node, self.representedID == entry.item.id, self.generation == capturedGeneration else { return }
+                    node.backgroundColor = UIColor.systemRed.withAlphaComponent(0.16).cgColor
+                }
             }
             imageTasks.append(task)
         }

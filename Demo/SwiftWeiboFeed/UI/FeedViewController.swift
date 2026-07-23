@@ -7,11 +7,12 @@ final class FeedViewController: UIViewController {
     private let imagePipeline: any ImagePipeline
     private let layoutCache = FeedLayoutCache()
     private lazy var prefetchCoordinator = FeedPrefetchCoordinator(imagePipeline: imagePipeline)
-    private var entries: [PreparedFeedEntry] = []
+    private let timelineStore = FeedTimelineStore()
     private var requestedIndexes = Set<Int>()
     private var loadTask: Task<Void, Never>?
     private var preparedEnvironment: FeedLayoutEnvironment?
     private var previousContentOffsetY: CGFloat = 0
+    private var repreparingIndexes = Set<Int>()
 
     init(repository: FeedRepository = FeedRepository(), imagePipeline: any ImagePipeline = SystemImagePipeline()) {
         self.repository = repository
@@ -72,7 +73,7 @@ final class FeedViewController: UIViewController {
 
     private func prepareTimeline(environment: FeedLayoutEnvironment) {
         loadTask?.cancel()
-        navigationItem.prompt = entries.isEmpty ? "Preparing 500 exact layouts…" : nil
+        navigationItem.prompt = timelineStore.count == 0 ? "Preparing 500 exact layouts…" : nil
         let repository = repository
         let resourceURLs = (0..<8).compactMap { Bundle.main.url(forResource: "weibo_\($0)", withExtension: "json") }
         loadTask = Task { [weak self] in
@@ -85,8 +86,9 @@ final class FeedViewController: UIViewController {
                 _ = try await repository.apply(page: page, environment: environment)
                 try Task.checkCancellation()
                 let snapshot = await repository.snapshot()
+                await repository.releasePreparedEntries()
                 guard let self, self.preparedEnvironment == environment else { return }
-                self.entries = snapshot
+                self.timelineStore.replace(with: snapshot)
                 for entry in snapshot { self.layoutCache.insert(entry.layout, cost: max(1, Int(entry.layout.height * CGFloat(environment.containerPixelWidth)))) }
                 self.requestedIndexes.removeAll()
                 self.prefetchCoordinator.setEntries(snapshot)
@@ -133,20 +135,20 @@ final class FeedViewController: UIViewController {
     }
 
     private func updatePrefetchWindow(direction: FeedScrollDirection) {
-        guard !entries.isEmpty else { return }
+        guard timelineStore.count > 0 else { return }
         let visibleRows = tableView.indexPathsForVisibleRows?.map(\.row).sorted() ?? []
         let visible: Range<Int>
         if let first = visibleRows.first, let last = visibleRows.last {
             visible = first..<(last + 1)
         } else {
-            visible = 0..<min(8, entries.count)
+            visible = 0..<min(8, timelineStore.count)
         }
         _ = prefetchCoordinator.update(visible: visible, requested: requestedIndexes, direction: direction)
     }
 
     private func handleMemoryPressure() async {
         let visibleRows = Set(tableView.indexPathsForVisibleRows?.map(\.row) ?? [])
-        let visibleIdentities = Set(visibleRows.compactMap { entries.indices.contains($0) ? entries[$0].layout.identity : nil })
+        let visibleIdentities = Set(visibleRows.compactMap { timelineStore.prepared(at: $0)?.layout.identity })
         let coordinator = FeedMemoryPressureCoordinator(
             discardNonvisibleBitmaps: { [weak self] retained in
                 guard let self else { return }
@@ -159,10 +161,16 @@ final class FeedViewController: UIViewController {
                 }
             },
             clearDecodedImages: { [imagePipeline] in
-                if let pipeline = imagePipeline as? SystemImagePipeline { await pipeline.handleMemoryPressure() }
+                if let pipeline = imagePipeline as? SystemImagePipeline { await pipeline.clearDecodedCache() }
             },
-            discardDistantLayouts: { [layoutCache] retained in layoutCache.removeAllExcept(retained) },
-            cancelLowPriorityPrefetch: { [weak self] in self?.prefetchCoordinator.shedLowPriorityWork(retaining: visibleRows) }
+            discardDistantLayouts: { [weak self, layoutCache] retained in
+                layoutCache.removeAllExcept(retained)
+                self?.timelineStore.evictDistantLayouts(retaining: retained)
+            },
+            cancelLowPriorityPrefetch: { [weak self, imagePipeline] in
+                self?.prefetchCoordinator.shedLowPriorityWork(retaining: visibleRows)
+                if let pipeline = imagePipeline as? SystemImagePipeline { await pipeline.cancelAllPrefetch() }
+            }
         )
         await coordinator.handle(retaining: visibleIdentities)
     }
@@ -171,17 +179,43 @@ final class FeedViewController: UIViewController {
 }
 
 extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { entries.count }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { timelineStore.count }
 
     func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
-        entries[indexPath.row].layout.height
+        timelineStore.height(at: indexPath.row)
     }
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "FeedCell", for: indexPath) as! FeedCell
-        cell.apply(entries[indexPath.row], pipeline: imagePipeline)
+        if let entry = timelineStore.prepared(at: indexPath.row) {
+            cell.apply(entry, pipeline: imagePipeline)
+        } else {
+            cell.prepareForReuse()
+            reprepareRow(at: indexPath.row)
+        }
         cell.onAction = { [weak self] action in self?.handle(action) }
         return cell
+    }
+
+    private func reprepareRow(at index: Int) {
+        guard repreparingIndexes.insert(index).inserted else { return }
+        let record = timelineStore.record(at: index)
+        guard let environment = preparedEnvironment else { repreparingIndexes.remove(index); return }
+        Task { [weak self] in
+            defer { self?.repreparingIndexes.remove(index) }
+            do {
+                let entry = try await Task.detached(priority: .userInitiated) {
+                    let parsed = FeedTextParser().parse(record.item.text)
+                    let parsedRepost = record.item.repost.map { FeedTextParser().parse($0.text) }
+                    let layout = try await FeedLayoutEngine().layout(identity: record.identity, item: record.item, parsedBody: parsed, parsedRepost: parsedRepost, environment: environment)
+                    return PreparedFeedEntry(item: record.item, identity: record.identity, parsed: parsed, layout: layout)
+                }.value
+                guard let self, self.timelineStore.install(entry, at: index) else { return }
+                if let cell = self.tableView.cellForRow(at: IndexPath(row: index, section: 0)) as? FeedCell {
+                    cell.apply(entry, pipeline: self.imagePipeline)
+                }
+            } catch {}
+        }
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
