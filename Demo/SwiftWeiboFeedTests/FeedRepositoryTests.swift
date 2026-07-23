@@ -105,12 +105,13 @@ final class FeedRepositoryTests: XCTestCase {
 
     func testDefaultParsingFanOutIsBoundedAndPublishesOnlyCompleteSnapshot() async throws {
         let counter = ParsingPeakCounter()
+        let barrier = TwoParseBarrier()
         let repository = FeedRepository(
-            parsingStartHook: {
+            parsingStartHook: { _ in
                 counter.enter()
-                Thread.sleep(forTimeInterval: 0.01)
+                await barrier.arriveAndWait()
             },
-            parsingEndHook: { counter.leave() }
+            parsingEndHook: { _ in counter.leave() }
         )
         let page = try decodePage(idsAndTexts: (0..<24).map { ("\($0)", "body @user \($0)") })
 
@@ -120,6 +121,43 @@ final class FeedRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.count, 24)
         XCTAssertTrue(snapshot.allSatisfy { !$0.layout.allFrames.isEmpty })
         XCTAssertEqual(counter.peak, 2)
+    }
+
+    func testCancelledBatchStopsSchedulingAndLeavesSnapshotAtomic() async throws {
+        let gate = CancelledParsingGate()
+        let repository = FeedRepository(parsingStartHook: { item in
+            try await gate.parsingStarted(item)
+        })
+        let baseline = try decodePage(idsAndTexts: [("baseline", "ready")])
+        _ = try await repository.apply(page: baseline, environment: environment())
+        let baselineSnapshot = await repository.snapshot()
+
+        let oldPage = try decodePage(idsAndTexts: (0..<20).map { ("old-\($0)", "old \($0)") })
+        let newPage = try decodePage(idsAndTexts: (0..<6).map { ("new-\($0)", "new \($0)") })
+        await gate.blockOldParses()
+        let oldApply = Task { try await repository.apply(page: oldPage, environment: environment()) }
+        await gate.waitUntilTwoOldParsesStarted()
+
+        oldApply.cancel()
+        let newApply = Task { try await repository.apply(page: newPage, environment: environment()) }
+        let inProgress = await repository.snapshot()
+        XCTAssertEqual(inProgress.map(\.item.id.rawValue), ["baseline"])
+        XCTAssertEqual(inProgress.map(\.identity), baselineSnapshot.map(\.identity))
+        XCTAssertEqual(inProgress.map(\.layout.identity), baselineSnapshot.map(\.layout.identity))
+        XCTAssertEqual(inProgress.map(\.parsed.source), ["ready"])
+
+        await gate.releaseOldParses()
+        do {
+            _ = try await oldApply.value
+            XCTFail("cancelled old batch must not publish")
+        } catch is CancellationError {}
+        _ = try await newApply.value
+
+        let oldStartCount = await gate.oldStartCount
+        XCTAssertEqual(oldStartCount, 2, "cancelled workers must not start the remaining old parses")
+        let final = await repository.snapshot()
+        XCTAssertEqual(final.map(\.item.id.rawValue), (0..<6).map { "new-\($0)" })
+        XCTAssertEqual(final.count, 6)
     }
 
     private func decodePage(idsAndTexts: [(String, String)], counts: (Int, Int, Int) = (0, 0, 0)) throws -> FeedPage {
@@ -142,6 +180,52 @@ private final class ParsingPeakCounter: @unchecked Sendable {
     var peak: Int { lock.withLock { maximum } }
     func enter() { lock.withLock { current += 1; maximum = max(maximum, current) } }
     func leave() { lock.withLock { current -= 1 } }
+}
+
+private actor TwoParseBarrier {
+    private var arrivals = 0
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func arriveAndWait() async {
+        arrivals += 1
+        guard arrivals < 2 else {
+            waiters.forEach { $0.resume() }
+            waiters.removeAll()
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+}
+
+private actor CancelledParsingGate {
+    private var blocksOld = false
+    private(set) var oldStartCount = 0
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func blockOldParses() { blocksOld = true }
+
+    func parsingStarted(_ item: FeedItem) async throws {
+        guard blocksOld, item.id.rawValue.hasPrefix("old-") else { return }
+        oldStartCount += 1
+        if oldStartCount == 2 {
+            entryWaiters.forEach { $0.resume() }
+            entryWaiters.removeAll()
+        }
+        await withCheckedContinuation { releaseWaiters.append($0) }
+        try Task.checkCancellation()
+    }
+
+    func waitUntilTwoOldParsesStarted() async {
+        if oldStartCount >= 2 { return }
+        await withCheckedContinuation { entryWaiters.append($0) }
+    }
+
+    func releaseOldParses() {
+        blocksOld = false
+        releaseWaiters.forEach { $0.resume() }
+        releaseWaiters.removeAll()
+    }
 }
 
 private actor PreparationGate {

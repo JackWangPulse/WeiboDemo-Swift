@@ -2,18 +2,26 @@ import Foundation
 
 private actor ParsingWorker {
     private let parser = FeedTextParser()
-    private let startHook: (@Sendable () -> Void)?
-    private let endHook: (@Sendable () -> Void)?
+    private let startHook: (@Sendable (FeedItem) async throws -> Void)?
+    private let endHook: (@Sendable (FeedItem) -> Void)?
 
-    init(startHook: (@Sendable () -> Void)?, endHook: (@Sendable () -> Void)?) {
+    init(
+        startHook: (@Sendable (FeedItem) async throws -> Void)?,
+        endHook: (@Sendable (FeedItem) -> Void)?
+    ) {
         self.startHook = startHook
         self.endHook = endHook
     }
 
-    func parse(_ item: FeedItem) -> (ParsedFeedText, ParsedFeedText?) {
-        startHook?()
-        defer { endHook?() }
-        return (parser.parse(item.text), item.repost.map { parser.parse($0.text) })
+    func parse(_ item: FeedItem) async throws -> (ParsedFeedText, ParsedFeedText?) {
+        try Task.checkCancellation()
+        try await startHook?(item)
+        defer { endHook?(item) }
+        try Task.checkCancellation()
+        let body = parser.parse(item.text)
+        try Task.checkCancellation()
+        let repost = item.repost.map { parser.parse($0.text) }
+        return (body, repost)
     }
 }
 
@@ -21,14 +29,20 @@ private actor ParsingExecutor {
     private let workers: [ParsingWorker]
     private var cursor = 0
 
-    init(concurrency: Int, startHook: (@Sendable () -> Void)?, endHook: (@Sendable () -> Void)?) {
+    init(
+        concurrency: Int,
+        startHook: (@Sendable (FeedItem) async throws -> Void)?,
+        endHook: (@Sendable (FeedItem) -> Void)?
+    ) {
         workers = (0..<max(1, concurrency)).map { _ in ParsingWorker(startHook: startHook, endHook: endHook) }
     }
 
-    func parse(_ item: FeedItem) async -> (ParsedFeedText, ParsedFeedText?) {
+    func parse(_ item: FeedItem) async throws -> (ParsedFeedText, ParsedFeedText?) {
+        try Task.checkCancellation()
         let worker = workers[cursor]
         cursor = (cursor + 1) % workers.count
-        return await worker.parse(item)
+        try Task.checkCancellation()
+        return try await worker.parse(item)
     }
 }
 
@@ -72,8 +86,8 @@ public actor FeedRepository {
 
     public init(
         prepareLayout: LayoutPreparation? = nil,
-        parsingStartHook: (@Sendable () -> Void)? = nil,
-        parsingEndHook: (@Sendable () -> Void)? = nil
+        parsingStartHook: (@Sendable (FeedItem) async throws -> Void)? = nil,
+        parsingEndHook: (@Sendable (FeedItem) -> Void)? = nil
     ) {
         if let prepareLayout {
             self.prepareLayout = prepareLayout
@@ -85,7 +99,7 @@ public actor FeedRepository {
             )
             let engine = FeedLayoutEngine()
             self.prepareLayout = { item, identity, environment in
-                let (parsedBody, parsedRepost) = await parsingExecutor.parse(item)
+                let (parsedBody, parsedRepost) = try await parsingExecutor.parse(item)
                 let layout = try await engine.layout(
                     identity: identity,
                     item: item,
@@ -119,28 +133,47 @@ public actor FeedRepository {
         }
         let preparation = prepareLayout
 
-        let prepared = try await withThrowingTaskGroup(of: (Int, PreparedFeedEntry).self) { group in
-            var result = Array<PreparedFeedEntry?>(repeating: nil, count: plans.count)
-            for (index, plan) in plans.enumerated() {
-                switch plan {
-                case let .reuse(entry):
-                    result[index] = entry
-                case let .prepare(item, identity):
-                    group.addTask {
+        var prepared = Array<PreparedFeedEntry?>(repeating: nil, count: plans.count)
+        var preparationIndexes: [Int] = []
+        for (index, plan) in plans.enumerated() {
+            if case let .reuse(entry) = plan {
+                prepared[index] = entry
+            } else {
+                preparationIndexes.append(index)
+            }
+        }
+        let workerCount = min(2, preparationIndexes.count)
+        let batches = try await withThrowingTaskGroup(of: [(Int, PreparedFeedEntry)].self) { group in
+            for worker in 0..<workerCount {
+                group.addTask {
+                    var batch: [(Int, PreparedFeedEntry)] = []
+                    var position = worker
+                    while position < preparationIndexes.count {
                         try Task.checkCancellation()
+                        let index = preparationIndexes[position]
+                        guard case let .prepare(item, identity) = plans[index] else {
+                            position += workerCount
+                            continue
+                        }
                         let (parsed, layout) = try await preparation(item, identity, environment)
                         try Task.checkCancellation()
-                        return (index, PreparedFeedEntry(item: item, identity: identity, parsed: parsed, layout: layout))
+                        batch.append((index, PreparedFeedEntry(item: item, identity: identity, parsed: parsed, layout: layout)))
+                        position += workerCount
                     }
+                    return batch
                 }
             }
-            for try await (index, entry) in group { result[index] = entry }
-            return result.compactMap { $0 }
+            var values: [(Int, PreparedFeedEntry)] = []
+            for try await batch in group { values.append(contentsOf: batch) }
+            return values
         }
+        for (index, entry) in batches { prepared[index] = entry }
+        let complete = prepared.compactMap { $0 }
+        guard complete.count == plans.count else { throw CancellationError() }
 
         try Task.checkCancellation()
         guard requestGeneration == generation else { throw CancellationError() }
-        state = State(entries: prepared, environment: environment)
+        state = State(entries: complete, environment: environment)
         return changes
     }
 
