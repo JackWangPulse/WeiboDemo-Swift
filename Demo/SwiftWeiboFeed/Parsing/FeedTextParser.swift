@@ -4,6 +4,10 @@ public struct FeedTextParser: Sendable {
     public init() {}
 
     public func parse(_ source: String) -> ParsedFeedText {
+        FeedSignpost.measure(.parse) { parseUninstrumented(source) }
+    }
+
+    private func parseUninstrumented(_ source: String) -> ParsedFeedText {
         guard !source.isEmpty else { return ParsedFeedText(source: source, spans: []) }
 
         var accepted: [FeedTextSpan] = []

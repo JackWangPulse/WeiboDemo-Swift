@@ -53,6 +53,9 @@
 		AA0000000000000000000001 /* FeedPrefetchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */; };
 		AA0000000000000000000002 /* FeedViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* FeedViewController.swift */; };
 		AA0000000000000000000003 /* FeedPrefetchCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */; };
+		AB0000000000000000000001 /* FeedSignpost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000011 /* FeedSignpost.swift */; };
+		AB0000000000000000000002 /* PerformanceSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000012 /* PerformanceSmokeTests.swift */; };
+		AB0000000000000000000003 /* FeedCellSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000013 /* FeedCellSnapshotTests.swift */; };
 		ABDC320D1BEAFB870012A159 /* YYTextTagExample.m in Sources */ = {isa = PBXBuildFile; fileRef = ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
@@ -286,6 +289,9 @@
 		AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPrefetchCoordinator.swift; sourceTree = "<group>"; };
 		AA0000000000000000000012 /* FeedViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedViewController.swift; sourceTree = "<group>"; };
 		AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPrefetchCoordinatorTests.swift; sourceTree = "<group>"; };
+		AB0000000000000000000011 /* FeedSignpost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSignpost.swift; sourceTree = "<group>"; };
+		AB0000000000000000000012 /* PerformanceSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSmokeTests.swift; sourceTree = "<group>"; };
+		AB0000000000000000000013 /* FeedCellSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCellSnapshotTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
 		A80000000000000000000011 /* FeedRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepository.swift; sourceTree = "<group>"; };
@@ -655,6 +661,7 @@
 		A10000000000000000000022 /* SwiftWeiboFeed */ = {
 			isa = PBXGroup;
 			children = (
+				AB0000000000000000000027 /* Performance */,
 				A90000000000000000000027 /* UI */,
 				A70000000000000000000027 /* Images */,
 				A10000000000000000000023 /* App */,
@@ -665,6 +672,14 @@
 				A10000000000000000000024 /* Resources */,
 			);
 			path = SwiftWeiboFeed;
+			sourceTree = "<group>";
+		};
+		AB0000000000000000000027 /* Performance */ = {
+			isa = PBXGroup;
+			children = (
+				AB0000000000000000000011 /* FeedSignpost.swift */,
+			);
+			path = Performance;
 			sourceTree = "<group>";
 		};
 		A90000000000000000000027 /* UI */ = {
@@ -751,6 +766,8 @@
 		A10000000000000000000025 /* SwiftWeiboFeedTests */ = {
 			isa = PBXGroup;
 			children = (
+				AB0000000000000000000012 /* PerformanceSmokeTests.swift */,
+				AB0000000000000000000013 /* FeedCellSnapshotTests.swift */,
 				A90000000000000000000013 /* FeedCellReuseTests.swift */,
 				AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */,
 				A80000000000000000000012 /* FeedRepositoryTests.swift */,
@@ -1536,6 +1553,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB0000000000000000000001 /* FeedSignpost.swift in Sources */,
 				A10000000000000000000001 /* AppDelegate.swift in Sources */,
 				A10000000000000000000002 /* SceneDelegate.swift in Sources */,
 				A20000000000000000000003 /* FeedModels.swift in Sources */,
@@ -1567,6 +1585,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				AB0000000000000000000002 /* PerformanceSmokeTests.swift in Sources */,
+				AB0000000000000000000003 /* FeedCellSnapshotTests.swift in Sources */,
 				A10000000000000000000003 /* TargetSmokeTests.swift in Sources */,
 				A20000000000000000000001 /* FeedFixtureLoader.swift in Sources */,
 				A20000000000000000000002 /* FeedModelsTests.swift in Sources */,

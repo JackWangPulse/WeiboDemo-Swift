@@ -143,14 +143,15 @@ public actor FeedRepository {
             }
         }
         let workerCount = min(2, preparationIndexes.count)
+        let indexesToPrepare = preparationIndexes
         let batches = try await withThrowingTaskGroup(of: [(Int, PreparedFeedEntry)].self) { group in
             for worker in 0..<workerCount {
                 group.addTask {
                     var batch: [(Int, PreparedFeedEntry)] = []
                     var position = worker
-                    while position < preparationIndexes.count {
+                    while position < indexesToPrepare.count {
                         try Task.checkCancellation()
-                        let index = preparationIndexes[position]
+                        let index = indexesToPrepare[position]
                         guard case let .prepare(item, identity) = plans[index] else {
                             position += workerCount
                             continue

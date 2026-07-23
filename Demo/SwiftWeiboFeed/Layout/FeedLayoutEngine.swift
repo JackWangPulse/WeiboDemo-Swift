@@ -24,35 +24,28 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         parsedRepost: ParsedFeedText?,
         environment: FeedLayoutEnvironment
     ) async throws -> FeedItemLayout {
-        try Task.checkCancellation()
-        let cancellation = LayoutCancellation()
-        let completion = LayoutCompletion<FeedItemLayout>()
-        let operation = BlockOperation { [layoutStartHook] in
-            guard !cancellation.isCancelled else { return }
-            layoutStartHook?()
-            do {
-                let result = try Self.compute(
-                    item: item,
-                    identity: identity,
-                    parsedBody: parsedBody,
-                    parsedRepost: parsedRepost,
-                    environment: environment,
-                    cancellation: cancellation
-                )
-                completion.resume(.success(result))
-            } catch {
-                completion.resume(.failure(error))
+        try await FeedSignpost.measureAsync(.layout) {
+            try Task.checkCancellation()
+            let cancellation = LayoutCancellation()
+            let completion = LayoutCompletion<FeedItemLayout>()
+            let operation = BlockOperation { [layoutStartHook] in
+                guard !cancellation.isCancelled else { return }
+                layoutStartHook?()
+                do {
+                    let result = try Self.compute(item: item, identity: identity, parsedBody: parsedBody, parsedRepost: parsedRepost, environment: environment, cancellation: cancellation)
+                    completion.resume(.success(result))
+                } catch { completion.resume(.failure(error)) }
             }
-        }
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                completion.install(continuation)
-                queue.addOperation(operation)
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    completion.install(continuation)
+                    queue.addOperation(operation)
+                }
+            } onCancel: {
+                cancellation.cancel()
+                operation.cancel()
+                completion.resume(.failure(CancellationError()))
             }
-        } onCancel: {
-            cancellation.cancel()
-            operation.cancel()
-            completion.resume(.failure(CancellationError()))
         }
     }
 

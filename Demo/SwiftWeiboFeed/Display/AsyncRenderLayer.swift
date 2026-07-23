@@ -98,6 +98,8 @@ public final class AsyncRenderLayer: CALayer {
         let factory = contextFactory
         let layerBox = WeakLayerBox(self)
         executor.execute {
+            let interval = FeedSignpost.begin(.display)
+            defer { interval.end() }
             guard !token.isCancelled else { return }
             guard let (width, height) = Self.pixelDimensions(size: task.size, scale: task.scale),
                   !token.isCancelled,

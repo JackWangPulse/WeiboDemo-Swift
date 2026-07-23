@@ -5,6 +5,7 @@ final class FeedViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .plain)
     private let repository: FeedRepository
     private let imagePipeline: any ImagePipeline
+    private let layoutCache = FeedLayoutCache()
     private lazy var prefetchCoordinator = FeedPrefetchCoordinator(imagePipeline: imagePipeline)
     private var entries: [PreparedFeedEntry] = []
     private var requestedIndexes = Set<Int>()
@@ -47,6 +48,11 @@ final class FeedViewController: UIViewController {
 
     deinit { loadTask?.cancel() }
 
+    override func didReceiveMemoryWarning() {
+        super.didReceiveMemoryWarning()
+        Task { @MainActor [weak self] in await self?.handleMemoryPressure() }
+    }
+
     private func layoutEnvironment() -> FeedLayoutEnvironment {
         FeedLayoutEnvironment(
             width: view.bounds.width,
@@ -81,6 +87,7 @@ final class FeedViewController: UIViewController {
                 let snapshot = await repository.snapshot()
                 guard let self, self.preparedEnvironment == environment else { return }
                 self.entries = snapshot
+                for entry in snapshot { self.layoutCache.insert(entry.layout, cost: max(1, Int(entry.layout.height * CGFloat(environment.containerPixelWidth)))) }
                 self.requestedIndexes.removeAll()
                 self.prefetchCoordinator.setEntries(snapshot)
                 self.navigationItem.prompt = nil
@@ -136,6 +143,31 @@ final class FeedViewController: UIViewController {
         }
         _ = prefetchCoordinator.update(visible: visible, requested: requestedIndexes, direction: direction)
     }
+
+    private func handleMemoryPressure() async {
+        let visibleRows = Set(tableView.indexPathsForVisibleRows?.map(\.row) ?? [])
+        let visibleIdentities = Set(visibleRows.compactMap { entries.indices.contains($0) ? entries[$0].layout.identity : nil })
+        let coordinator = FeedMemoryPressureCoordinator(
+            discardNonvisibleBitmaps: { [weak self] retained in
+                guard let self else { return }
+                for cell in self.tableView.visibleCells.compactMap({ $0 as? FeedCell }) {
+                    guard let id = cell.representedID,
+                          retained.contains(where: { $0.content.itemID == id }) else {
+                        cell.contentNode.cancelRendering()
+                        continue
+                    }
+                }
+            },
+            clearDecodedImages: { [imagePipeline] in
+                if let pipeline = imagePipeline as? SystemImagePipeline { await pipeline.handleMemoryPressure() }
+            },
+            discardDistantLayouts: { [layoutCache] retained in layoutCache.removeAllExcept(retained) },
+            cancelLowPriorityPrefetch: { [weak self] in self?.prefetchCoordinator.shedLowPriorityWork(retaining: visibleRows) }
+        )
+        await coordinator.handle(retaining: visibleIdentities)
+    }
+
+    func triggerMemoryPressureForTesting() async { await handleMemoryPressure() }
 }
 
 extension FeedViewController: UITableViewDataSource, UITableViewDelegate {

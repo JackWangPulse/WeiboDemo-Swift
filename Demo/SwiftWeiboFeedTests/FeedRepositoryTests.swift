@@ -134,12 +134,13 @@ final class FeedRepositoryTests: XCTestCase {
 
         let oldPage = try decodePage(idsAndTexts: (0..<20).map { ("old-\($0)", "old \($0)") })
         let newPage = try decodePage(idsAndTexts: (0..<6).map { ("new-\($0)", "new \($0)") })
+        let testEnvironment = environment()
         await gate.blockOldParses()
-        let oldApply = Task { try await repository.apply(page: oldPage, environment: environment()) }
+        let oldApply = Task { try await repository.apply(page: oldPage, environment: testEnvironment) }
         await gate.waitUntilTwoOldParsesStarted()
 
         oldApply.cancel()
-        let newApply = Task { try await repository.apply(page: newPage, environment: environment()) }
+        let newApply = Task { try await repository.apply(page: newPage, environment: testEnvironment) }
         let inProgress = await repository.snapshot()
         XCTAssertEqual(inProgress.map(\.item.id.rawValue), ["baseline"])
         XCTAssertEqual(inProgress.map(\.identity), baselineSnapshot.map(\.identity))

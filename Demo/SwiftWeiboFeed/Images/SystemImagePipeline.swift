@@ -26,28 +26,28 @@ private final class ImageDecoder: @unchecked Sendable {
     }
 
     func decode(_ data: Data, request: ImageRequest) async throws -> SendableCGImage {
-        let state = DecodeState()
-        return try await withTaskCancellationHandler {
-            try await withCheckedThrowingContinuation { continuation in
-                state.install(continuation)
-                let operation = BlockOperation { [hook] in
-                    do {
-                        try state.checkCancellation()
-                        hook?()
-                        try state.checkCancellation()
-                        let image = try Self.makeThumbnail(data, request: request, checkCancellation: state.checkCancellation)
-                        try state.checkCancellation()
-                        state.finish(.success(image))
-                    } catch {
-                        state.finish(.failure(error))
+        try await FeedSignpost.measureAsync(.decode) {
+            let state = DecodeState()
+            return try await withTaskCancellationHandler {
+                try await withCheckedThrowingContinuation { continuation in
+                    state.install(continuation)
+                    let operation = BlockOperation { [hook] in
+                        do {
+                            try state.checkCancellation()
+                            hook?()
+                            try state.checkCancellation()
+                            let image = try Self.makeThumbnail(data, request: request, checkCancellation: state.checkCancellation)
+                            try state.checkCancellation()
+                            state.finish(.success(image))
+                        } catch { state.finish(.failure(error)) }
                     }
+                    state.install(operation)
+                    queue.addOperation(operation)
+                    enqueuedHook?()
                 }
-                state.install(operation)
-                queue.addOperation(operation)
-                enqueuedHook?()
+            } onCancel: {
+                state.cancel()
             }
-        } onCancel: {
-            state.cancel()
         }
     }
 
@@ -106,7 +106,7 @@ private final class SharedSubscriptionState: @unchecked Sendable {
     private var subscribers: Set<UUID> = []
 
     func insert(_ subscriber: UUID) {
-        lock.withLock { subscribers.insert(subscriber) }
+        _ = lock.withLock { subscribers.insert(subscriber) }
     }
 
     @discardableResult
@@ -243,7 +243,9 @@ actor SystemImagePipeline: ImagePipeline {
             task = Task.detached(priority: Task.currentPriority) {
                 var urlRequest = URLRequest(url: request.url)
                 urlRequest.cachePolicy = .useProtocolCachePolicy
-                let (data, response) = try await session.data(for: urlRequest)
+                let (data, response) = try await FeedSignpost.measureAsync(.download) {
+                    try await session.data(for: urlRequest)
+                }
                 guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                     throw SystemImagePipelineError.invalidResponse
                 }
@@ -297,6 +299,13 @@ actor SystemImagePipeline: ImagePipeline {
         for request in requests {
             prefetchTasks.removeValue(forKey: request)?.task?.cancel()
         }
+    }
+
+    func handleMemoryPressure() {
+        cache.removeAll()
+        let tasks = prefetchTasks.values.compactMap(\.task)
+        prefetchTasks.removeAll()
+        tasks.forEach { $0.cancel() }
     }
 
     private func unsubscribe(

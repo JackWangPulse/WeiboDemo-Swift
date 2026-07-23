@@ -37,4 +37,6 @@ final class DecodedImageCache: @unchecked Sendable {
     func removeImage(for request: ImageRequest) {
         storage.removeObject(forKey: Key(request))
     }
+
+    func removeAll() { storage.removeAllObjects() }
 }

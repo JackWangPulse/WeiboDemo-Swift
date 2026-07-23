@@ -116,6 +116,12 @@ final class FeedPrefetchCoordinator {
         submitImageOwners(imageOwners(for: renderWindowIndexes.sorted()))
     }
 
+    func shedLowPriorityWork(retaining visible: Set<Int>) {
+        layoutWindowIndexes.formIntersection(visible)
+        renderWindowIndexes.formIntersection(visible)
+        submitImageOwners(imageOwners(for: renderWindowIndexes.sorted()))
+    }
+
     func waitForImageOperations() async { await imageOperation.value }
 
     private func prioritizedIndexes(
