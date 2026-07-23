@@ -16,7 +16,9 @@ public struct FeedUser: Decodable, Hashable, Sendable {
     public let avatarURL: URL?
     public let isVerified: Bool
     public let verifiedType: Int?
+    public let verifiedLevel: Int?
     public let verifiedReason: String?
+    public let membershipRank: Int
 
     private enum CodingKeys: String, CodingKey {
         case id, name
@@ -25,7 +27,9 @@ public struct FeedUser: Decodable, Hashable, Sendable {
         case profileImageURL = "profile_image_url"
         case isVerified = "verified"
         case verifiedType = "verified_type"
+        case verifiedLevel = "verified_level"
         case verifiedReason = "verified_reason"
+        case membershipRank = "mbrank"
     }
 
     public init(from decoder: Decoder) throws {
@@ -40,7 +44,9 @@ public struct FeedUser: Decodable, Hashable, Sendable {
             ?? container.lossyURL(forKey: .profileImageURL)
         isVerified = (try? container.decodeIfPresent(Bool.self, forKey: .isVerified)) ?? false
         verifiedType = try? container.decodeIfPresent(Int.self, forKey: .verifiedType)
+        verifiedLevel = try? container.decodeIfPresent(Int.self, forKey: .verifiedLevel)
         verifiedReason = try? container.decodeIfPresent(String.self, forKey: .verifiedReason)
+        membershipRank = (try? container.decodeIfPresent(Int.self, forKey: .membershipRank)) ?? 0
     }
 }
 

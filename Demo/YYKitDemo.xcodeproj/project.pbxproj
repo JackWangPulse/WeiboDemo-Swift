@@ -62,6 +62,8 @@
 		AE0000000000000000000001 /* FeedEmoticonResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0000000000000000000011 /* FeedEmoticonResolver.swift */; };
 		AF0000000000000000000001 /* WeiboResourceProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0000000000000000000011 /* WeiboResourceProviderTests.swift */; };
 		AF0000000000000000000002 /* WeiboResourceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0000000000000000000012 /* WeiboResourceProvider.swift */; };
+		B00000000000000000000001 /* WeiboUserPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* WeiboUserPresentationTests.swift */; };
+		B00000000000000000000002 /* WeiboUserPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* WeiboUserPresentation.swift */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
 		D9067DF71B9856FF00F346EB /* YYTextMarkdownExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF61B9856FF00F346EB /* YYTextMarkdownExample.m */; };
@@ -304,6 +306,8 @@
 		AE0000000000000000000011 /* FeedEmoticonResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedEmoticonResolver.swift; sourceTree = "<group>"; };
 		AF0000000000000000000011 /* WeiboResourceProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeiboResourceProviderTests.swift; sourceTree = "<group>"; };
 		AF0000000000000000000012 /* WeiboResourceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeiboResourceProvider.swift; sourceTree = "<group>"; };
+		B00000000000000000000011 /* WeiboUserPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeiboUserPresentationTests.swift; sourceTree = "<group>"; };
+		B00000000000000000000012 /* WeiboUserPresentation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeiboUserPresentation.swift; sourceTree = "<group>"; };
 		D9067DEF1B975D3900F346EB /* YYTextExampleHelper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextExampleHelper.h; sourceTree = "<group>"; };
 		D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = YYTextExampleHelper.m; sourceTree = "<group>"; };
 		D9067DF21B9813B500F346EB /* YYTextEditExample.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextEditExample.h; sourceTree = "<group>"; };
@@ -713,6 +717,7 @@
 				A40000000000000000000011 /* FeedLayoutEngineTests.swift */,
 				A60000000000000000000011 /* AsyncRenderLayerTests.swift */,
 				AF0000000000000000000011 /* WeiboResourceProviderTests.swift */,
+				B00000000000000000000011 /* WeiboUserPresentationTests.swift */,
 				A20000000000000000000026 /* Fixtures */,
 			);
 			path = SwiftWeiboFeedTests;
@@ -732,6 +737,7 @@
 				A20000000000000000000013 /* FeedModels.swift */,
 				A20000000000000000000014 /* FeedIdentity.swift */,
 				A80000000000000000000011 /* FeedRepository.swift */,
+				B00000000000000000000012 /* WeiboUserPresentation.swift */,
 			);
 			path = Domain;
 			sourceTree = "<group>";
@@ -1601,6 +1607,7 @@
 				AA0000000000000000000001 /* FeedPrefetchCoordinator.swift in Sources */,
 				AA0000000000000000000002 /* FeedViewController.swift in Sources */,
 				AF0000000000000000000002 /* WeiboResourceProvider.swift in Sources */,
+				B00000000000000000000002 /* WeiboUserPresentation.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1621,6 +1628,7 @@
 				A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */,
 				AA0000000000000000000003 /* FeedPrefetchCoordinatorTests.swift in Sources */,
 				AF0000000000000000000001 /* WeiboResourceProviderTests.swift in Sources */,
+				B00000000000000000000001 /* WeiboUserPresentationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
