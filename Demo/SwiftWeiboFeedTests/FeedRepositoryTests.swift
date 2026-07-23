@@ -65,8 +65,13 @@ final class FeedRepositoryTests: XCTestCase {
     func testOlderPreparationCannotOverwriteNewerApply() async throws {
         let parser = FeedTextParser()
         let engine = FeedLayoutEngine()
+        let oldPreparationEntered = expectation(description: "old preparation entered")
+        let oldPreparationGate = PreparationGate()
         let repository = FeedRepository { item, identity, environment in
-            if item.text == "old" { try await Task.sleep(for: .milliseconds(200)) }
+            if item.text == "old" {
+                oldPreparationEntered.fulfill()
+                await oldPreparationGate.waitUntilReleased()
+            }
             let body = parser.parse(item.text)
             let repost = item.repost.map { parser.parse($0.text) }
             let layout = try await engine.layout(identity: identity, item: item, parsedBody: body, parsedRepost: repost, environment: environment)
@@ -77,12 +82,21 @@ final class FeedRepositoryTests: XCTestCase {
         let layoutEnvironment = environment()
 
         let older = Task { try await repository.apply(page: oldPage, environment: layoutEnvironment) }
-        try await Task.sleep(for: .milliseconds(30))
-        _ = try await repository.apply(page: newPage, environment: layoutEnvironment)
+        await fulfillment(of: [oldPreparationEntered], timeout: 1)
+
+        let newerResult: Result<[FeedChange], Error>
+        do {
+            newerResult = .success(try await repository.apply(page: newPage, environment: layoutEnvironment))
+        } catch {
+            newerResult = .failure(error)
+        }
+        await oldPreparationGate.release()
+
         do {
             _ = try await older.value
             XCTFail("Superseded preparation should not commit")
         } catch is CancellationError {}
+        _ = try newerResult.get()
 
         let snapshot = await repository.snapshot()
         XCTAssertEqual(snapshot.first?.item.text, "new")
@@ -98,5 +112,23 @@ final class FeedRepositoryTests: XCTestCase {
 
     private func environment(width: CGFloat = 320, theme: UInt = 0) -> FeedLayoutEnvironment {
         FeedLayoutEnvironment(width: width, scale: 2, contentSizeCategory: .large, themeVersion: theme, algorithmVersion: 1)
+    }
+}
+
+private actor PreparationGate {
+    private var isReleased = false
+    private var waiter: CheckedContinuation<Void, Never>?
+
+    func waitUntilReleased() async {
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            waiter = continuation
+        }
+    }
+
+    func release() {
+        isReleased = true
+        waiter?.resume()
+        waiter = nil
     }
 }
