@@ -57,6 +57,18 @@ final class FeedLayoutEngineTests: XCTestCase {
         XCTAssertGreaterThan(CGFloat(CTLineGetTypographicBounds(layout.body.storage.lines[0], nil, nil, nil)), attachment.frame.width)
     }
 
+    func testBaseAndAdditionalWeiboEmoticonsResolve() async {
+        let images = await Task.detached {
+            (
+                FeedEmoticonResolver.image(named: "喵喵"),
+                FeedEmoticonResolver.image(named: "真心英雄陈学冬")
+            )
+        }.value
+
+        XCTAssertNotNil(images.0, "Base package emoticons must remain available")
+        XCTAssertNotNil(images.1, "Original demo recursively loads additional JSON emoticon packages")
+    }
+
     func testAccessibilityGeometryExpandsWithoutOverlapOrClipping() async throws {
         let item = try makeRichItem()
         let parsedRepost = FeedTextParser().parse(try XCTUnwrap(item.repost).text)
