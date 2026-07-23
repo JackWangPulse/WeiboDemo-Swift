@@ -9,7 +9,7 @@ final class FeedViewController: UIViewController {
     private var entries: [PreparedFeedEntry] = []
     private var requestedIndexes = Set<Int>()
     private var loadTask: Task<Void, Never>?
-    private var preparedPixelWidth = 0
+    private var preparedEnvironment: FeedLayoutEnvironment?
     private var previousContentOffsetY: CGFloat = 0
 
     init(repository: FeedRepository = FeedRepository(), imagePipeline: any ImagePipeline = SystemImagePipeline()) {
@@ -37,10 +37,12 @@ final class FeedViewController: UIViewController {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         tableView.frame = view.bounds
-        let environment = layoutEnvironment()
-        guard environment.containerPixelWidth > 0, environment.containerPixelWidth != preparedPixelWidth else { return }
-        preparedPixelWidth = environment.containerPixelWidth
-        prepareTimeline(environment: environment)
+        prepareForCurrentEnvironmentIfNeeded()
+    }
+
+    override func traitCollectionDidChange(_ previousTraitCollection: UITraitCollection?) {
+        super.traitCollectionDidChange(previousTraitCollection)
+        prepareForCurrentEnvironmentIfNeeded()
     }
 
     deinit { loadTask?.cancel() }
@@ -53,6 +55,13 @@ final class FeedViewController: UIViewController {
             themeVersion: traitCollection.userInterfaceStyle == .dark ? 1 : 0,
             algorithmVersion: 1
         )
+    }
+
+    private func prepareForCurrentEnvironmentIfNeeded() {
+        let environment = layoutEnvironment()
+        guard environment.containerPixelWidth > 0, environment != preparedEnvironment else { return }
+        preparedEnvironment = environment
+        prepareTimeline(environment: environment)
     }
 
     private func prepareTimeline(environment: FeedLayoutEnvironment) {
@@ -70,7 +79,7 @@ final class FeedViewController: UIViewController {
                 _ = try await repository.apply(page: page, environment: environment)
                 try Task.checkCancellation()
                 let snapshot = await repository.snapshot()
-                guard let self, self.preparedPixelWidth == environment.containerPixelWidth else { return }
+                guard let self, self.preparedEnvironment == environment else { return }
                 self.entries = snapshot
                 self.requestedIndexes.removeAll()
                 self.prefetchCoordinator.setEntries(snapshot)

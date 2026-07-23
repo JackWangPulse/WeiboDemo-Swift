@@ -103,6 +103,25 @@ final class FeedRepositoryTests: XCTestCase {
         XCTAssertEqual(snapshot.first?.parsed.source, "new")
     }
 
+    func testDefaultParsingFanOutIsBoundedAndPublishesOnlyCompleteSnapshot() async throws {
+        let counter = ParsingPeakCounter()
+        let repository = FeedRepository(
+            parsingStartHook: {
+                counter.enter()
+                Thread.sleep(forTimeInterval: 0.01)
+            },
+            parsingEndHook: { counter.leave() }
+        )
+        let page = try decodePage(idsAndTexts: (0..<24).map { ("\($0)", "body @user \($0)") })
+
+        _ = try await repository.apply(page: page, environment: environment())
+        let snapshot = await repository.snapshot()
+
+        XCTAssertEqual(snapshot.count, 24)
+        XCTAssertTrue(snapshot.allSatisfy { !$0.layout.allFrames.isEmpty })
+        XCTAssertEqual(counter.peak, 2)
+    }
+
     private func decodePage(idsAndTexts: [(String, String)], counts: (Int, Int, Int) = (0, 0, 0)) throws -> FeedPage {
         let statuses = idsAndTexts.map { id, text in
             #"{"id":"\#(id)","text":"\#(text)","user":{"id":"u\#(id)","name":"User"},"reposts_count":\#(counts.0),"comments_count":\#(counts.1),"attitudes_count":\#(counts.2)}"#
@@ -113,6 +132,16 @@ final class FeedRepositoryTests: XCTestCase {
     private func environment(width: CGFloat = 320, theme: UInt = 0) -> FeedLayoutEnvironment {
         FeedLayoutEnvironment(width: width, scale: 2, contentSizeCategory: .large, themeVersion: theme, algorithmVersion: 1)
     }
+}
+
+private final class ParsingPeakCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current = 0
+    private var maximum = 0
+
+    var peak: Int { lock.withLock { maximum } }
+    func enter() { lock.withLock { current += 1; maximum = max(maximum, current) } }
+    func leave() { lock.withLock { current -= 1 } }
 }
 
 private actor PreparationGate {

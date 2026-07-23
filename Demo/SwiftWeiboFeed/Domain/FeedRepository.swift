@@ -1,5 +1,37 @@
 import Foundation
 
+private actor ParsingWorker {
+    private let parser = FeedTextParser()
+    private let startHook: (@Sendable () -> Void)?
+    private let endHook: (@Sendable () -> Void)?
+
+    init(startHook: (@Sendable () -> Void)?, endHook: (@Sendable () -> Void)?) {
+        self.startHook = startHook
+        self.endHook = endHook
+    }
+
+    func parse(_ item: FeedItem) -> (ParsedFeedText, ParsedFeedText?) {
+        startHook?()
+        defer { endHook?() }
+        return (parser.parse(item.text), item.repost.map { parser.parse($0.text) })
+    }
+}
+
+private actor ParsingExecutor {
+    private let workers: [ParsingWorker]
+    private var cursor = 0
+
+    init(concurrency: Int, startHook: (@Sendable () -> Void)?, endHook: (@Sendable () -> Void)?) {
+        workers = (0..<max(1, concurrency)).map { _ in ParsingWorker(startHook: startHook, endHook: endHook) }
+    }
+
+    func parse(_ item: FeedItem) async -> (ParsedFeedText, ParsedFeedText?) {
+        let worker = workers[cursor]
+        cursor = (cursor + 1) % workers.count
+        return await worker.parse(item)
+    }
+}
+
 public enum FeedChange: Equatable, Sendable {
     case inserted(FeedID, Int)
     case deleted(FeedID, Int)
@@ -38,15 +70,22 @@ public actor FeedRepository {
     private var state = State()
     private var generation: UInt64 = 0
 
-    public init(prepareLayout: LayoutPreparation? = nil) {
+    public init(
+        prepareLayout: LayoutPreparation? = nil,
+        parsingStartHook: (@Sendable () -> Void)? = nil,
+        parsingEndHook: (@Sendable () -> Void)? = nil
+    ) {
         if let prepareLayout {
             self.prepareLayout = prepareLayout
         } else {
-            let parser = FeedTextParser()
+            let parsingExecutor = ParsingExecutor(
+                concurrency: 2,
+                startHook: parsingStartHook,
+                endHook: parsingEndHook
+            )
             let engine = FeedLayoutEngine()
             self.prepareLayout = { item, identity, environment in
-                let parsedBody = parser.parse(item.text)
-                let parsedRepost = item.repost.map { parser.parse($0.text) }
+                let (parsedBody, parsedRepost) = await parsingExecutor.parse(item)
                 let layout = try await engine.layout(
                     identity: identity,
                     item: item,

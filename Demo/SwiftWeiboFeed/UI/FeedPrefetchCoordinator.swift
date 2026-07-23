@@ -18,29 +18,58 @@ struct FeedPrefetchUpdate: Sendable {
     let cancelled: Set<Int>
 }
 
+actor FeedImagePrefetchDriver {
+    private let pipeline: any ImagePipeline
+    private var owners: [ImageRequest: Set<Int>] = [:]
+    private var generation: UInt64 = 0
+
+    init(pipeline: any ImagePipeline) { self.pipeline = pipeline }
+
+    func replaceOwners(generation nextGeneration: UInt64, with next: [ImageRequest: Set<Int>]) async {
+        guard nextGeneration > generation else { return }
+        generation = nextGeneration
+        let removed = Array(owners.keys.filter { next[$0] == nil })
+        let added = Array(next.keys.filter { owners[$0] == nil })
+        owners = next
+        // The actor intentionally serializes cancellation before warming. A request
+        // shared by multiple indexes remains present and produces neither call.
+        if !removed.isEmpty { await pipeline.cancelPrefetch(removed) }
+        if !added.isEmpty { await pipeline.prefetch(added) }
+    }
+}
+
 /// Owns the bounded, directional working set. Layout requests are never shed;
 /// speculative render/image warming is capped and cancelled on direction changes.
 @MainActor
 final class FeedPrefetchCoordinator {
     private var itemCount: Int
     private let renderCapacity: Int
-    private var activeIndexes: Set<Int> = []
+    private var layoutWindowIndexes: Set<Int> = []
+    private var renderWindowIndexes: Set<Int> = []
     private var entries: [PreparedFeedEntry] = []
-    private let imagePipeline: (any ImagePipeline)?
-    private var requestsByIndex: [Int: [ImageRequest]] = [:]
+    private let imageDriver: FeedImagePrefetchDriver?
+    private let requestProvider: ((Int) -> [ImageRequest])?
+    private var imageOperation = Task<Void, Never> {}
+    private var imageGeneration: UInt64 = 0
 
-    init(itemCount: Int = 0, renderCapacity: Int = 48, imagePipeline: (any ImagePipeline)? = nil) {
+    init(
+        itemCount: Int = 0,
+        renderCapacity: Int = 48,
+        imagePipeline: (any ImagePipeline)? = nil,
+        requestProvider: ((Int) -> [ImageRequest])? = nil
+    ) {
         self.itemCount = max(0, itemCount)
         self.renderCapacity = max(0, renderCapacity)
-        self.imagePipeline = imagePipeline
+        imageDriver = imagePipeline.map(FeedImagePrefetchDriver.init)
+        self.requestProvider = requestProvider
     }
 
     func setEntries(_ entries: [PreparedFeedEntry]) {
-        cancelAllImagePrefetch()
+        submitImageOwners([:])
         self.entries = entries
         itemCount = entries.count
-        activeIndexes.removeAll()
-        requestsByIndex.removeAll()
+        layoutWindowIndexes.removeAll()
+        renderWindowIndexes.removeAll()
     }
 
     @discardableResult
@@ -62,28 +91,32 @@ final class FeedPrefetchCoordinator {
 
         let requested = Set(requested.filter { (0..<itemCount).contains($0) })
         let priorities = prioritizedIndexes(visible: visible, forward: forward, requested: requested, trailing: trailing)
-        let nextActive = Set(priorities.map(\.index))
-        let cancelled = activeIndexes.subtracting(nextActive)
-        activeIndexes = nextActive
+        let nextLayoutWindow = Set(priorities.map(\.index))
+        let cancelled = layoutWindowIndexes.subtracting(nextLayoutWindow)
+        layoutWindowIndexes = nextLayoutWindow
 
         // Exact layout demand survives pressure. Render warming consumes only the
         // bounded capacity, with visible rows taking all slots first.
-        let layoutIndexes = Set(visible).union(requested)
-        let layoutJobs = priorities
-            .filter { layoutIndexes.contains($0.index) }
-            .map { FeedPreparationJob(index: $0.index, kind: .layout, priority: $0.priority) }
+        let layoutJobs = priorities.map {
+            FeedPreparationJob(index: $0.index, kind: .layout, priority: $0.priority)
+        }
         let effectiveRenderCapacity = max(renderCapacity, visible.count)
-        let renderJobs = priorities.prefix(effectiveRenderCapacity).map {
+        let renderPriorities = Array(priorities.prefix(effectiveRenderCapacity))
+        let renderJobs = renderPriorities.map {
             FeedPreparationJob(index: $0.index, kind: .render, priority: $0.priority)
         }
-        synchronizeImagePrefetch(priorities: Array(priorities.prefix(effectiveRenderCapacity)), cancelled: cancelled)
+        renderWindowIndexes = Set(renderPriorities.map(\.index))
+        submitImageOwners(imageOwners(for: renderPriorities.map(\.index)))
         return FeedPrefetchUpdate(jobs: layoutJobs + renderJobs, cancelled: cancelled)
     }
 
     func cancel(indexes: Set<Int>) {
-        activeIndexes.subtract(indexes)
-        cancelImagePrefetch(indexes: indexes)
+        layoutWindowIndexes.subtract(indexes)
+        renderWindowIndexes.subtract(indexes)
+        submitImageOwners(imageOwners(for: renderWindowIndexes.sorted()))
     }
+
+    func waitForImageOperations() async { await imageOperation.value }
 
     private func prioritizedIndexes(
         visible: Range<Int>, forward: Range<Int>, requested: Set<Int>, trailing: Range<Int>
@@ -104,29 +137,32 @@ final class FeedPrefetchCoordinator {
         max(0, min(itemCount, range.lowerBound))..<max(0, min(itemCount, range.upperBound))
     }
 
-    private func synchronizeImagePrefetch(
-        priorities: [(index: Int, priority: FeedPreparationPriority)], cancelled: Set<Int>
-    ) {
-        guard let imagePipeline else { return }
-        cancelImagePrefetch(indexes: cancelled)
-        var fresh: [ImageRequest] = []
-        for value in priorities where requestsByIndex[value.index] == nil && value.index < entries.count {
-            let requests = Self.imageRequests(for: entries[value.index])
-            requestsByIndex[value.index] = requests
-            fresh.append(contentsOf: requests)
+    private func imageOwners(for indexes: [Int]) -> [ImageRequest: Set<Int>] {
+        var owners: [ImageRequest: Set<Int>] = [:]
+        for index in indexes {
+            let requests: [ImageRequest]
+            if let requestProvider {
+                requests = requestProvider(index)
+            } else if index < entries.count {
+                requests = Self.imageRequests(for: entries[index])
+            } else {
+                requests = []
+            }
+            for request in requests { owners[request, default: []].insert(index) }
         }
-        guard !fresh.isEmpty else { return }
-        Task { await imagePipeline.prefetch(fresh) }
+        return owners
     }
 
-    private func cancelImagePrefetch(indexes: Set<Int>) {
-        guard let imagePipeline else { return }
-        let requests = indexes.flatMap { requestsByIndex.removeValue(forKey: $0) ?? [] }
-        guard !requests.isEmpty else { return }
-        Task { await imagePipeline.cancelPrefetch(requests) }
+    private func submitImageOwners(_ owners: [ImageRequest: Set<Int>]) {
+        guard let imageDriver else { return }
+        imageGeneration &+= 1
+        let generation = imageGeneration
+        let previous = imageOperation
+        imageOperation = Task {
+            await previous.value
+            await imageDriver.replaceOwners(generation: generation, with: owners)
+        }
     }
-
-    private func cancelAllImagePrefetch() { cancelImagePrefetch(indexes: Set(requestsByIndex.keys)) }
 
     private static func imageRequests(for entry: PreparedFeedEntry) -> [ImageRequest] {
         let scale = max(1, entry.layout.identity.environment.displayScale)
