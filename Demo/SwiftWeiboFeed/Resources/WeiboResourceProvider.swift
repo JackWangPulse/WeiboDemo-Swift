@@ -2,7 +2,7 @@ import CoreGraphics
 import Foundation
 import ImageIO
 
-enum WeiboResource: Hashable, Sendable {
+public enum WeiboResource: Hashable, Sendable {
     case toolbarRepost
     case toolbarComment
     case toolbarUnlike

@@ -63,14 +63,14 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         try checkCancellation(cancellation)
         let scale = CGFloat(max(environment.displayScale, 1))
         let width = CGFloat(environment.containerPixelWidth) / scale
-        let inset: CGFloat = 12
+        let inset = WeiboVisualMetrics.contentInset
         let contentWidth = max(0, width - inset * 2)
-        let bodyX: CGFloat = 64
-        let bodyWidth = max(0, width - bodyX - inset)
+        let bodyX = inset
+        let bodyWidth = contentWidth
         let profile = try makeProfileLayout(item: item, width: width, environment: environment, cancellation: cancellation)
-        var cursor: CGFloat = profile.frame.maxY + 12
+        var cursor = profile.frame.maxY
         let body = try makeTextLayout(parsedBody, x: bodyX, y: cursor, width: bodyWidth, itemID: item.id, environment: environment, maximumLines: maximumBodyLines, cancellation: cancellation)
-        cursor = body.bounds.maxY + 12
+        cursor = body.bounds.maxY + WeiboVisualMetrics.textPadding
 
         try checkCancellation(cancellation)
         let media = mediaFrames(count: item.pictures.count, x: inset, y: cursor, availableWidth: contentWidth)
@@ -98,16 +98,19 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let tag = try item.tags.first.map { try makeTagLayout($0, x: inset, y: cursor, width: contentWidth, environment: environment, cancellation: cancellation) }
         if let tag { cursor = tag.frame.maxY + 12 }
         try checkCancellation(cancellation)
-        let metricScale = max(1, CGFloat(environment.bodyLineHeight) / 20)
-        let toolbarHeight = max(44, 44 * metricScale)
+        let toolbarHeight = WeiboVisualMetrics.toolbarHeight
         let toolbarFrame = CGRect(x: 0, y: cursor, width: width, height: toolbarHeight)
         let sectionWidth = width / 3
-        let actions: [(FeedAction, String)] = [(.repost, "Repost"), (.comment, "Comment"), (.like, "Like")]
+        let actions: [(FeedAction, WeiboResource, String)] = [
+            (.repost, .toolbarRepost, "Repost"),
+            (.comment, .toolbarComment, "Comment"),
+            (.like, .toolbarUnlike, "Like"),
+        ]
         let toolbarRegions = actions.enumerated().map { index, value in
             InteractionRegion(
                 rects: [CGRect(x: CGFloat(index) * sectionWidth, y: cursor, width: sectionWidth, height: toolbarHeight)],
                 action: value.0,
-                accessibilityLabel: value.1
+                accessibilityLabel: value.2
             )
         }
         let counts = [item.repostCount, item.commentCount, item.likeCount]
@@ -115,11 +118,12 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let sectionX = CGFloat(index) * sectionWidth
             return ToolbarItemLayout(
                 action: value.0,
+                resource: value.1,
                 iconFrame: CGRect(x: sectionX + sectionWidth / 2 - 26, y: cursor + (toolbarHeight - 16) / 2, width: 16, height: 16),
                 count: makeSingleLineText(String(counts[index]), x: sectionX + sectionWidth / 2 - 4, y: cursor + (toolbarHeight - max(20, CGFloat(environment.bodyLineHeight))) / 2, width: 34, color: environment.palette.secondaryText, fontSize: max(13, CGFloat(environment.bodyFontSize) * 0.8))
             )
         }
-        let height = toolbarFrame.maxY + 8
+        let height = toolbarFrame.maxY + WeiboVisualMetrics.toolbarBottomMargin
         try checkCancellation(cancellation)
         return FeedItemLayout(
             identity: FeedLayoutIdentity(content: identity, environment: environment),
@@ -137,16 +141,15 @@ public final class FeedLayoutEngine: @unchecked Sendable {
     private static func makeProfileLayout(item: FeedItem, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> ProfileLayout {
         try checkCancellation(cancellation)
         let lineHeight = CGFloat(environment.bodyLineHeight)
-        let avatarSide = max(40, lineHeight * 2)
-        let profileHeight = max(64, avatarSide + 24, lineHeight * 2 + 20)
-        let frame = CGRect(x: 0, y: 0, width: width, height: profileHeight)
-        let avatar = CGRect(x: 12, y: 12, width: avatarSide, height: avatarSide)
-        let textX = avatar.maxX + 12
+        let avatarSide: CGFloat = 40
+        let frame = CGRect(x: 0, y: WeiboVisualMetrics.topMargin, width: width, height: WeiboVisualMetrics.profileHeight)
+        let avatar = CGRect(x: WeiboVisualMetrics.contentInset, y: frame.minY + 12, width: avatarSide, height: avatarSide)
+        let textX = avatar.maxX + WeiboVisualMetrics.nameAvatarSpacing
         let verificationFrame = item.user.isVerified ? CGRect(x: avatar.maxX - 8, y: avatar.maxY - 8, width: 12, height: 12) : nil
-        let name = makeSingleLineText(item.user.name, x: textX, y: 10, width: max(0, width - textX - 12), color: environment.palette.primaryText, fontSize: CGFloat(environment.bodyFontSize))
+        let name = makeSingleLineText(item.user.name, x: textX, y: frame.minY + 9, width: max(0, width - textX - 12), color: environment.palette.primaryText, fontSize: WeiboVisualMetrics.nameFontSize)
         let timeText = item.createdAt.map(Self.formatProfileDate)
-        let metaY = 10 + lineHeight
-        let metaFont = max(12, CGFloat(environment.bodyFontSize) * 0.75)
+        let metaY = frame.minY + 30
+        let metaFont = WeiboVisualMetrics.sourceFontSize
         let timeWidth = min(120 * max(1, lineHeight / 20), max(0, width - textX - 12))
         let time = timeText.map { makeSingleLineText($0, x: textX, y: metaY, width: timeWidth, color: environment.palette.secondaryText, fontSize: metaFont) }
         let sourceX = time == nil ? textX : textX + timeWidth + 4

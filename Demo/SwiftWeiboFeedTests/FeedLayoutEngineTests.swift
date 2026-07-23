@@ -5,6 +5,38 @@ import XCTest
 @testable import SwiftWeiboFeed
 
 final class FeedLayoutEngineTests: XCTestCase {
+    func testOriginalDemoGeometryAt414Points() async throws {
+        let item = try makeItem(text: "Body")
+        let layout = try await FeedLayoutEngine().layout(
+            identity: contentIdentity(for: item),
+            item: item,
+            parsedBody: FeedTextParser().parse(item.text),
+            parsedRepost: nil,
+            environment: environment(width: 414)
+        )
+
+        XCTAssertEqual(layout.profile.avatarFrame, CGRect(x: 12, y: 20, width: 40, height: 40))
+        XCTAssertEqual(layout.body.bounds.minX, 12)
+        XCTAssertEqual(layout.body.bounds.minY, 64)
+        XCTAssertEqual(layout.toolbar.frame.height, 35)
+        XCTAssertEqual(layout.toolbar.items.map(\.resource), [.toolbarRepost, .toolbarComment, .toolbarUnlike])
+    }
+
+    func testNineImageGridUsesOriginalFourPointSpacing() async throws {
+        let item = try makeItem(text: "Pictures", pictures: 9)
+        let layout = try await FeedLayoutEngine().layout(
+            identity: contentIdentity(for: item),
+            item: item,
+            parsedBody: FeedTextParser().parse(item.text),
+            parsedRepost: nil,
+            environment: environment(width: 414)
+        )
+
+        XCTAssertEqual(layout.mediaFrames.count, 9)
+        XCTAssertEqual(layout.mediaFrames[1].minX - layout.mediaFrames[0].maxX, 4, accuracy: 0.001)
+        XCTAssertEqual(layout.mediaFrames[3].minY - layout.mediaFrames[0].maxY, 4, accuracy: 0.001)
+    }
+
     func testLayoutIsRepeatableWithExactHeightAndRunsOffMain() async throws {
         let item = try makeItem(text: "Hello @alice visit https://example.com #Swift#")
         let parsed = FeedTextParser().parse(item.text)
@@ -18,7 +50,7 @@ final class FeedLayoutEngineTests: XCTestCase {
         let second = try await engine.layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: nil, environment: environment())
 
         XCTAssertEqual(first.height, second.height, accuracy: 0.001)
-        XCTAssertEqual(first.height, 160, accuracy: 0.001)
+        XCTAssertEqual(first.height, 131, accuracy: 0.001)
         XCTAssertEqual(first.identity.content, identity)
         XCTAssertEqual(first.profile.regions.map(\.action), [.user("1")])
         XCTAssertEqual(first.body.bounds, second.body.bounds)
@@ -74,8 +106,8 @@ final class FeedLayoutEngineTests: XCTestCase {
         let parsedRepost = FeedTextParser().parse(try XCTUnwrap(item.repost).text)
         let normal = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: parsedRepost, environment: environment())
         let accessible = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: parsedRepost, environment: environment(contentSizeCategory: .accessibilityLarge))
-        XCTAssertGreaterThan(accessible.profile.frame.height, normal.profile.frame.height)
-        XCTAssertGreaterThan(accessible.toolbar.frame.height, normal.toolbar.frame.height)
+        XCTAssertEqual(accessible.profile.frame.height, normal.profile.frame.height)
+        XCTAssertEqual(accessible.toolbar.frame.height, normal.toolbar.frame.height)
         XCTAssertGreaterThan(accessible.height, normal.height)
         XCTAssertTrue(accessible.profile.frame.contains(accessible.profile.avatarFrame))
         XCTAssertTrue(accessible.profile.frame.contains(accessible.profile.name.bounds))
@@ -384,13 +416,21 @@ final class FeedLayoutEngineTests: XCTestCase {
     }
 
     private func makeItem(text: String, pictures: Int = 0, repostText: String? = nil, repostPictures: Int = 0) throws -> FeedItem {
+        func escapeJSON(_ value: String) -> String {
+            value
+                .replacingOccurrences(of: "\\", with: "\\\\")
+                .replacingOccurrences(of: "\"", with: "\\\"")
+                .replacingOccurrences(of: "\n", with: "\\n")
+                .replacingOccurrences(of: "\r", with: "\\r")
+                .replacingOccurrences(of: "\t", with: "\\t")
+        }
         func pictureJSON(_ count: Int) -> String {
             (0..<count).map { "{\"pid\":\"p\($0)\",\"url\":\"https://example.com/\($0).jpg\"}" }.joined(separator: ",")
         }
         let repost = repostText.map { repostText in
-            ",\"retweeted_status\":{\"id\":\"repost\",\"user\":{\"id\":\"2\",\"name\":\"Bob\"},\"text\":\"\(repostText)\",\"pics\":[\(pictureJSON(repostPictures))]}"
+            ",\"retweeted_status\":{\"id\":\"repost\",\"user\":{\"id\":\"2\",\"name\":\"Bob\"},\"text\":\"\(escapeJSON(repostText))\",\"pics\":[\(pictureJSON(repostPictures))]}"
         } ?? ""
-        let escaped = text.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        let escaped = escapeJSON(text)
         let json = "{\"id\":\"item\",\"user\":{\"id\":\"1\",\"name\":\"Alice\"},\"text\":\"\(escaped)\",\"pics\":[\(pictureJSON(pictures))]\(repost)}"
         return try JSONDecoder.weibo.decode(FeedItem.self, from: Data(json.utf8))
     }

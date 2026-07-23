@@ -76,11 +76,13 @@ public struct ToolbarLayout: Sendable {
 
 public struct ToolbarItemLayout: Sendable {
     public let action: FeedAction
+    public let resource: WeiboResource
     public let iconFrame: CGRect
     public let count: TextLayout
 
-    public init(action: FeedAction, iconFrame: CGRect, count: TextLayout) {
+    public init(action: FeedAction, resource: WeiboResource, iconFrame: CGRect, count: TextLayout) {
         self.action = action
+        self.resource = resource
         self.iconFrame = iconFrame
         self.count = count
     }
