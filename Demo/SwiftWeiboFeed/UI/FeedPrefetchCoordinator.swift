@@ -46,7 +46,9 @@ final class FeedPrefetchCoordinator {
     private let renderCapacity: Int
     private var layoutWindowIndexes: Set<Int> = []
     private var renderWindowIndexes: Set<Int> = []
-    private var entries: [PreparedFeedEntry] = []
+    /// Lightweight request metadata only. The coordinator must never own parsed
+    /// text, CoreText lines, or a PreparedFeedEntry.
+    private var requestsByIndex: [Int: [ImageRequest]] = [:]
     private let imageDriver: FeedImagePrefetchDriver?
     private let requestProvider: ((Int) -> [ImageRequest])?
     private var imageOperation = Task<Void, Never> {}
@@ -66,7 +68,7 @@ final class FeedPrefetchCoordinator {
 
     func setEntries(_ entries: [PreparedFeedEntry]) {
         submitImageOwners([:])
-        self.entries = entries
+        requestsByIndex = Dictionary(uniqueKeysWithValues: entries.enumerated().map { ($0.offset, Self.imageRequests(for: $0.element)) })
         itemCount = entries.count
         layoutWindowIndexes.removeAll()
         renderWindowIndexes.removeAll()
@@ -149,8 +151,8 @@ final class FeedPrefetchCoordinator {
             let requests: [ImageRequest]
             if let requestProvider {
                 requests = requestProvider(index)
-            } else if index < entries.count {
-                requests = Self.imageRequests(for: entries[index])
+            } else if let metadata = requestsByIndex[index] {
+                requests = metadata
             } else {
                 requests = []
             }

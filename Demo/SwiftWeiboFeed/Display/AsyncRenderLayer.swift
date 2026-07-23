@@ -37,6 +37,8 @@ typealias BitmapContextFactory = @Sendable (_ width: Int, _ height: Int, _ opaqu
 public final class AsyncRenderLayer: CALayer {
     private static let maximumBitmapBytes = 64 * 1_024 * 1_024
     private static let bytesPerPixel = 4
+    private static let registryLock = NSLock()
+    nonisolated(unsafe) private static var registry: [WeakLayerBox] = []
 
     private struct State {
         var identity: RenderIdentity?
@@ -54,6 +56,7 @@ public final class AsyncRenderLayer: CALayer {
         contextFactory = Self.makeBitmapContext
         commitObserver = nil
         super.init()
+        Self.register(self)
     }
 
     override public init(layer: Any) {
@@ -61,6 +64,7 @@ public final class AsyncRenderLayer: CALayer {
         contextFactory = Self.makeBitmapContext
         commitObserver = nil
         super.init(layer: layer)
+        Self.register(self)
     }
 
     required init?(coder: NSCoder) {
@@ -68,6 +72,7 @@ public final class AsyncRenderLayer: CALayer {
         contextFactory = Self.makeBitmapContext
         commitObserver = nil
         super.init(coder: coder)
+        Self.register(self)
     }
 
     init(
@@ -79,6 +84,7 @@ public final class AsyncRenderLayer: CALayer {
         self.contextFactory = contextFactory
         commitObserver = commit
         super.init()
+        Self.register(self)
     }
 
     convenience init(_ commit: @escaping @MainActor (RenderIdentity, CGImage) -> Void) {
@@ -136,6 +142,24 @@ public final class AsyncRenderLayer: CALayer {
 
     private func isCurrent(_ identity: RenderIdentity, token: DisplayCancellationToken) -> Bool {
         stateLock.withLock { state.identity == identity && state.token === token }
+    }
+
+    @MainActor
+    static func discardNonvisibleBitmaps(retaining layouts: Set<FeedLayoutIdentity>) {
+        let layers = registryLock.withLock { () -> [AsyncRenderLayer] in
+            registry.removeAll { $0.value == nil }
+            return registry.compactMap(\.value)
+        }
+        for layer in layers {
+            let identity = layer.stateLock.withLock { layer.state.identity }
+            guard let identity, !layouts.contains(identity.layout) else { continue }
+            layer.cancelDisplay()
+            layer.contents = nil
+        }
+    }
+
+    private static func register(_ layer: AsyncRenderLayer) {
+        registryLock.withLock { registry.append(WeakLayerBox(layer)) }
     }
 
     private static func pixelDimensions(size: CGSize, scale: CGFloat) -> (Int, Int)? {

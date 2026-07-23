@@ -43,9 +43,16 @@ final class FeedCellSnapshotTests: XCTestCase {
         cell.frame = CGRect(x: 0, y: 0, width: 414, height: entry.layout.height)
         cell.contentView.frame = cell.bounds
         let pipeline = SnapshotImagePipeline(mode: snapshot == .imagePlaceholder ? .pending : snapshot == .imageFailure ? .failure : .success)
+        let completionGate = SnapshotCompletionGate()
+        cell.imageCompletionForTesting = { _, _ in Task { await completionGate.record() } }
         cell.apply(entry, pipeline: pipeline)
         await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } }
-        for _ in 0..<20 { await Task.yield() }
+        let expectedImages = cell.contentNode.imageBindings(for: entry, scale: 2).count
+        if snapshot == .imagePlaceholder {
+            XCTAssertTrue(cell.contentNode.imageLayers.allSatisfy { $0.contents == nil }, "placeholder snapshot must remain explicitly unresolved")
+        } else if expectedImages > 0 {
+            await completionGate.wait(for: expectedImages)
+        }
         let format = UIGraphicsImageRendererFormat(); format.scale = 2; format.opaque = true
         let image = UIGraphicsImageRenderer(size: cell.bounds.size, format: format).image { context in
             UIColor.white.setFill(); context.fill(cell.bounds); cell.layer.render(in: context.cgContext)
@@ -110,4 +117,18 @@ private actor SnapshotImagePipeline: ImagePipeline {
     }
     func prefetch(_ requests: [ImageRequest]) async {}
     func cancelPrefetch(_ requests: [ImageRequest]) async {}
+}
+
+private actor SnapshotCompletionGate {
+    private var count = 0
+    private var waiters: [(Int, CheckedContinuation<Void, Never>)] = []
+    func record() {
+        count += 1
+        let ready = waiters.filter { count >= $0.0 }; waiters.removeAll { count >= $0.0 }
+        ready.forEach { $0.1.resume() }
+    }
+    func wait(for target: Int) async {
+        guard count < target else { return }
+        await withCheckedContinuation { waiters.append((target, $0)) }
+    }
 }

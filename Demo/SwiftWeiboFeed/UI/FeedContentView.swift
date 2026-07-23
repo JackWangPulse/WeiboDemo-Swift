@@ -41,6 +41,9 @@ public final class FeedContentView: UIView {
 
     public func apply(_ entry: PreparedFeedEntry) {
         cancelInteraction()
+        backgroundColor = .clear
+        isAccessibilityElement = false
+        accessibilityLabel = nil
         self.entry = entry
         let layout = entry.layout
         frame.size.height = layout.height

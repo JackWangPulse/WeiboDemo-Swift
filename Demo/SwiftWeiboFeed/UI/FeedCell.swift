@@ -7,6 +7,7 @@ public final class FeedCell: UITableViewCell {
     private(set) var representedID: FeedID?
     private(set) var generation: UInt = 0
     private var imageTasks: [Task<Void, Never>] = []
+    var imageCompletionForTesting: ((ImageRequest, Result<Void, Error>) -> Void)?
 
     public override convenience init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
         self.init(style: style, reuseIdentifier: reuseIdentifier, contentNode: FeedContentView())
@@ -39,13 +40,23 @@ public final class FeedCell: UITableViewCell {
                     try Task.checkCancellation()
                     guard let self, let node, self.representedID == entry.item.id, self.generation == capturedGeneration, response.request == request else { return }
                     node.contentsScale = scale; node.contents = response.image
+                    self.imageCompletionForTesting?(request, .success(()))
                 } catch {
                     guard let self, let node, self.representedID == entry.item.id, self.generation == capturedGeneration else { return }
                     node.backgroundColor = UIColor.systemRed.withAlphaComponent(0.16).cgColor
+                    self.imageCompletionForTesting?(request, .failure(error))
                 }
             }
             imageTasks.append(task)
         }
+    }
+
+    func applyPlaceholder(identity: FeedContentIdentity, height: CGFloat, width: CGFloat) {
+        cancelImageTasks(); contentNode.clear(); generation &+= 1; representedID = identity.itemID
+        contentNode.frame = CGRect(x: 0, y: 0, width: width, height: height)
+        contentNode.backgroundColor = .systemGray6
+        contentNode.isAccessibilityElement = true
+        contentNode.accessibilityLabel = "Loading feed content"
     }
 
     public override func prepareForReuse() {
@@ -53,6 +64,7 @@ public final class FeedCell: UITableViewCell {
         generation &+= 1
         representedID = nil
         onAction = nil
+        imageCompletionForTesting = nil
         cancelImageTasks()
         contentNode.clear()
     }

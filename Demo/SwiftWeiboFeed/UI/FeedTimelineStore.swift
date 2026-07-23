@@ -9,14 +9,19 @@ final class FeedTimelineStore {
     struct Record: Sendable {
         let item: FeedItem
         let identity: FeedContentIdentity
+        let expectedLayoutIdentity: FeedLayoutIdentity
+        let generation: UInt64
         let exactHeight: CGFloat
         var prepared: PreparedFeedEntry?
     }
 
     private(set) var records: [Record] = []
+    private(set) var generation: UInt64 = 0
 
     func replace(with entries: [PreparedFeedEntry]) {
-        records = entries.map { Record(item: $0.item, identity: $0.identity, exactHeight: $0.layout.height, prepared: $0) }
+        generation &+= 1
+        let current = generation
+        records = entries.map { Record(item: $0.item, identity: $0.identity, expectedLayoutIdentity: $0.layout.identity, generation: current, exactHeight: $0.layout.height, prepared: $0) }
     }
 
     var count: Int { records.count }
@@ -24,8 +29,11 @@ final class FeedTimelineStore {
     func prepared(at index: Int) -> PreparedFeedEntry? { records[index].prepared }
     func record(at index: Int) -> Record { records[index] }
 
-    func install(_ entry: PreparedFeedEntry, at index: Int) -> Bool {
-        guard records.indices.contains(index), records[index].identity == entry.identity,
+    func install(_ entry: PreparedFeedEntry, at index: Int, generation expectedGeneration: UInt64) -> Bool {
+        guard generation == expectedGeneration, records.indices.contains(index),
+              records[index].generation == expectedGeneration,
+              records[index].identity == entry.identity,
+              records[index].expectedLayoutIdentity == entry.layout.identity,
               abs(records[index].exactHeight - entry.layout.height) < 0.5 else { return false }
         records[index].prepared = entry
         return true

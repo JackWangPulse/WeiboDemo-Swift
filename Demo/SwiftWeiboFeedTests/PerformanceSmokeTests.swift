@@ -149,6 +149,67 @@ final class PerformanceSmokeTests: XCTestCase {
         XCTAssertEqual(prefetchCount, 0)
     }
 
+    @MainActor
+    func testAllProductionOwnersReleaseDistantCoreTextStorageAfterTransferAndPressure() async throws {
+        let repository = FeedRepository()
+        let page = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["0", "1", "2"]))
+        let environment = FeedLayoutEnvironment(width: 414, scale: 2, contentSizeCategory: .large, themeVersion: 0, algorithmVersion: 1)
+        _ = try await repository.apply(page: page, environment: environment)
+        var entries: [PreparedFeedEntry]? = await repository.transferPreparedEntries()
+        weak let distantStorage = entries?[2].layout.body.storage
+        let store = FeedTimelineStore(); store.replace(with: try XCTUnwrap(entries))
+        let cache = FeedLayoutCache(); entries?.forEach { cache.insert($0.layout, cost: 1) }
+        let prefetch = FeedPrefetchCoordinator(imagePipeline: EmptyImagePipeline()); prefetch.setEntries(try XCTUnwrap(entries))
+        let visible = Set([try XCTUnwrap(entries?[0].layout.identity)])
+        store.evictDistantLayouts(retaining: visible); cache.removeAllExcept(visible); entries = nil
+        let repositoryIsEmpty = await repository.snapshot().isEmpty
+        XCTAssertTrue(repositoryIsEmpty)
+        XCTAssertNil(distantStorage, "repository transfer, timeline store, layout cache and prefetch metadata must release distant CoreText storage")
+        XCTAssertEqual(store.preparedIndexesForTesting, [0])
+    }
+
+    @MainActor
+    func testDirectionalLayoutJobRestoresEvictedTargetBeforeCellApply() async throws {
+        let entries = try await makeEntries(count: 6), store = FeedTimelineStore(); store.replace(with: entries)
+        store.evictDistantLayouts(retaining: [entries[0].layout.identity])
+        let coordinator = FeedPrefetchCoordinator(itemCount: entries.count)
+        let update = coordinator.update(visible: 0..<1, requested: [], direction: .forward)
+        let target = try XCTUnwrap(update.jobs.first { $0.kind == .layout && $0.index == 1 })
+        let record = store.record(at: target.index)
+        let restored = try await Task.detached {
+            let parsed = FeedTextParser().parse(record.item.text)
+            let layout = try await FeedLayoutEngine().layout(identity: record.identity, item: record.item, parsedBody: parsed, parsedRepost: nil, environment: record.expectedLayoutIdentity.environment)
+            return PreparedFeedEntry(item: record.item, identity: record.identity, parsed: parsed, layout: layout)
+        }.value
+        XCTAssertTrue(store.install(restored, at: target.index, generation: record.generation))
+        let cell = FeedCell(style: .default, reuseIdentifier: nil)
+        cell.apply(try XCTUnwrap(store.prepared(at: target.index)), pipeline: EmptyImagePipeline())
+        XCTAssertEqual(cell.representedID, record.item.id)
+        XCTAssertFalse(cell.contentNode.isAccessibilityElement, "preprepared row must not enter loading placeholder state")
+    }
+
+    @MainActor
+    func testBlockedOldEnvironmentInstallIsIgnoredAfterTimelineReplacement() async throws {
+        let old = try await makeEntries(count: 1), store = FeedTimelineStore(); store.replace(with: old)
+        let oldRecord = store.record(at: 0)
+        let replacement = try await makeEntries(count: 2); store.replace(with: replacement)
+        XCTAssertFalse(store.install(old[0], at: 0, generation: oldRecord.generation))
+        XCTAssertEqual(store.record(at: 0).generation, store.generation)
+        XCTAssertEqual(store.prepared(at: 0)?.item.id, replacement[0].item.id)
+    }
+
+    func testRepositoryAtomicTransferCannotClearNewerApply() async throws {
+        let repository = FeedRepository(), environment = FeedLayoutEnvironment(width: 414, scale: 2, contentSizeCategory: .large, themeVersion: 0, algorithmVersion: 1)
+        let oldPage = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["old"]))
+        _ = try await repository.apply(page: oldPage, environment: environment)
+        let old = await repository.transferPreparedEntries()
+        let newPage = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["new"]))
+        _ = try await repository.apply(page: newPage, environment: environment)
+        XCTAssertEqual(old.map(\.item.id.rawValue), ["old"])
+        let current = await repository.snapshot().map(\.item.id.rawValue)
+        XCTAssertEqual(current, ["new"])
+    }
+
     func testFiveHundredMixedItemsPrepareOffMainWithExactCachedHeights() async throws {
         let base = try JSONDecoder.weibo.decode(FeedItem.self, from: Data(#"{"id":"base","user":{"id":"u","name":"User"},"text":"@user #topic# https://example.com","pics":[]}"#.utf8))
         let data = try JSONEncoderForSmoke.makePage(from: base, count: 500)
@@ -186,6 +247,9 @@ private enum JSONEncoderForSmoke {
             ["id": "smoke-\(index)", "user": ["id": "u", "name": "User"], "text": index.isMultiple(of: 2) ? item.text : String(repeating: "long text ", count: 20)]
         }
         return try JSONSerialization.data(withJSONObject: ["statuses": statuses])
+    }
+    static func page(ids: [String]) throws -> Data {
+        try JSONSerialization.data(withJSONObject: ["statuses": ids.map { ["id": $0, "user": ["id": "u", "name": "User"], "text": $0] }])
     }
 }
 

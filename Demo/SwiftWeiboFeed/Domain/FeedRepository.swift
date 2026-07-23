@@ -180,9 +180,13 @@ public actor FeedRepository {
 
     public func snapshot() -> [PreparedFeedEntry] { state.entries }
 
-    /// Transfers heavyweight ownership to the UI timeline store after a snapshot.
-    /// The next page/environment application will prepare from immutable domain input.
-    public func releasePreparedEntries() { state = State() }
+    /// Atomically transfers heavyweight prepared ownership. No later request can
+    /// be cleared by a stale snapshot/release pair because there is no second step.
+    public func transferPreparedEntries() -> [PreparedFeedEntry] {
+        let entries = state.entries
+        state = State()
+        return entries
+    }
 
     private enum PreparationPlan: Sendable {
         case reuse(PreparedFeedEntry)
