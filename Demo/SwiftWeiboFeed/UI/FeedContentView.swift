@@ -10,8 +10,13 @@ public final class FeedContentView: UIView {
     let tagLayer: AsyncRenderLayer
     let toolbarLayer: AsyncRenderLayer
     private let highlightLayer = CALayer()
+    let avatarBadgeLayer = CALayer()
+    private(set) var nameBadgeLayers: [CALayer] = []
     private(set) var imageLayers: [CALayer] = []
     private(set) var mediaLayers: [CALayer] = []
+    private let resourceProvider: any WeiboResourceProviding
+
+    var avatarLayer: CALayer? { imageLayers.first }
 
     private var entry: PreparedFeedEntry?
     private var interactionRegions: [InteractionRegion] = []
@@ -19,12 +24,17 @@ public final class FeedContentView: UIView {
     public var onAction: ((FeedAction) -> Void)?
 
     public override convenience init(frame: CGRect) {
-        self.init(frame: frame, layerFactory: { AsyncRenderLayer() })
+        self.init(frame: frame, resourceProvider: WeiboResourceProvider.shared, layerFactory: { AsyncRenderLayer() })
     }
 
-    init(frame: CGRect = .zero, layerFactory: () -> AsyncRenderLayer) {
+    init(
+        frame: CGRect = .zero,
+        resourceProvider: any WeiboResourceProviding = WeiboResourceProvider.shared,
+        layerFactory: () -> AsyncRenderLayer
+    ) {
         profileLayer = layerFactory(); bodyLayer = layerFactory(); repostLayer = layerFactory()
         cardLayer = layerFactory(); tagLayer = layerFactory(); toolbarLayer = layerFactory()
+        self.resourceProvider = resourceProvider
         super.init(frame: frame)
         isAccessibilityElement = false
         isOpaque = true
@@ -35,6 +45,8 @@ public final class FeedContentView: UIView {
         highlightLayer.backgroundColor = UIColor.systemBlue.withAlphaComponent(0.14).cgColor
         highlightLayer.isHidden = true
         layer.addSublayer(highlightLayer)
+        avatarBadgeLayer.contentsGravity = .resizeAspect
+        layer.addSublayer(avatarBadgeLayer)
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -55,6 +67,7 @@ public final class FeedContentView: UIView {
         tagLayer.frame = layout.tag?.frame ?? .zero
         toolbarLayer.frame = layout.toolbar.frame
         rebuildImageLayers(entry)
+        configureProfileDecorations(entry)
         interactionRegions = Self.regions(layout)
         rebuildAccessibility(entry)
     }
@@ -62,11 +75,16 @@ public final class FeedContentView: UIView {
     func display(entry: PreparedFeedEntry, generation: UInt, scale: CGFloat) {
         let layout = entry.layout
         let palette = layout.identity.environment.palette
+        let moreImage = resourceProvider.image(.timelineMore)
+        let toolbarImages = layout.toolbar.items.map { resourceProvider.image($0.resource) }
         display(profileLayer, frame: layout.profile.frame, identity: identity(entry, .profile, generation), scale: scale) { context, token in
             Self.fill(context, size: layout.profile.frame.size, color: palette.background)
             Self.draw(layout.profile.name, in: context, region: layout.profile.frame, token: token)
             if let time = layout.profile.time { Self.draw(time, in: context, region: layout.profile.frame, token: token) }
             if let source = layout.profile.source { Self.draw(source, in: context, region: layout.profile.frame, token: token) }
+            if let moreImage {
+                Self.drawImage(moreImage, frame: CGRect(x: layout.profile.frame.width - 32, y: 10, width: 20, height: 20), context: context)
+            }
         }
         display(bodyLayer, frame: layout.body.bounds, identity: identity(entry, .body, generation), scale: scale) { Self.draw(layout.body, in: $0, region: layout.body.bounds, token: $1) }
         if let repost = layout.repost {
@@ -81,9 +99,11 @@ public final class FeedContentView: UIView {
         display(toolbarLayer, frame: layout.toolbar.frame, identity: identity(entry, .toolbar, generation), scale: scale) { context, token in
             guard !token.isCancelled else { return }
             Self.strokeSeparator(context, globalY: layout.toolbar.frame.minY, region: layout.toolbar.frame, color: palette.separator)
-            for item in layout.toolbar.items {
+            for (item, image) in zip(layout.toolbar.items, toolbarImages) {
                 guard !token.isCancelled else { return }
-                Self.drawToolbarIcon(item.action, frame: item.iconFrame.offsetBy(dx: -layout.toolbar.frame.minX, dy: -layout.toolbar.frame.minY), context: context, color: palette.icon)
+                if let image {
+                    Self.drawImage(image, frame: item.iconFrame.offsetBy(dx: -layout.toolbar.frame.minX, dy: -layout.toolbar.frame.minY), context: context)
+                }
                 Self.draw(item.count, in: context, region: layout.toolbar.frame, token: token)
             }
         }
@@ -110,7 +130,10 @@ public final class FeedContentView: UIView {
         cancelRendering()
         for node in [profileLayer, bodyLayer, repostLayer, cardLayer, tagLayer, toolbarLayer] { node.frame = .zero }
         imageLayers.forEach { $0.contents = nil; $0.removeFromSuperlayer() }
-        imageLayers.removeAll(); mediaLayers.removeAll(); highlightLayer.isHidden = true
+        imageLayers.removeAll(); mediaLayers.removeAll()
+        avatarBadgeLayer.contents = nil; avatarBadgeLayer.frame = .zero
+        nameBadgeLayers.forEach { $0.removeFromSuperlayer() }; nameBadgeLayers.removeAll()
+        highlightLayer.isHidden = true
     }
 
     func cancelRendering() {
@@ -150,9 +173,52 @@ public final class FeedContentView: UIView {
         imageLayers = frames.map { frame in
             let node = CALayer(); node.frame = frame; node.contentsGravity = .resizeAspectFill; node.masksToBounds = true; node.backgroundColor = UIColor.systemGray5.cgColor; layer.addSublayer(node); return node
         }
+        if let avatarLayer = imageLayers.first {
+            avatarLayer.cornerRadius = entry.layout.profile.avatarFrame.width / 2
+            avatarLayer.borderWidth = 1 / CGFloat(max(entry.layout.identity.environment.displayScale, 1))
+            avatarLayer.borderColor = UIColor(white: 0, alpha: 0.09).cgColor
+        }
         let mediaCount = entry.layout.mediaFrames.count + (entry.layout.repost?.mediaFrames.count ?? 0)
         mediaLayers = Array(imageLayers.dropFirst().prefix(mediaCount))
         layer.addSublayer(highlightLayer)
+        layer.addSublayer(avatarBadgeLayer)
+    }
+
+    private func configureProfileDecorations(_ entry: PreparedFeedEntry) {
+        let presentation = WeiboUserPresentation(user: entry.item.user)
+        avatarBadgeLayer.contents = presentation.avatarBadge.flatMap(resourceProvider.image)
+        avatarBadgeLayer.frame = presentation.avatarBadge == nil
+            ? .zero
+            : CGRect(
+                x: entry.layout.profile.avatarFrame.maxX - 11,
+                y: entry.layout.profile.avatarFrame.maxY - 11,
+                width: 14,
+                height: 14
+            )
+
+        nameBadgeLayers.forEach { $0.removeFromSuperlayer() }
+        nameBadgeLayers.removeAll()
+        let lineWidth = entry.layout.profile.name.storage.lines.first.map {
+            CGFloat(CTLineGetTypographicBounds($0, nil, nil, nil))
+        } ?? 0
+        var x = min(entry.layout.profile.name.bounds.maxX - 16, entry.layout.profile.name.bounds.minX + lineWidth + 3)
+        for badge in presentation.nameBadges {
+            let image: CGImage?
+            switch badge {
+            case .enterpriseVIP: image = resourceProvider.image(.avatarEnterpriseVIP)
+            case let .membership(rank): image = resourceProvider.membershipImage(rank: rank)
+            }
+            guard let image else { continue }
+            let node = CALayer()
+            node.contents = image
+            node.contentsGravity = .resizeAspect
+            node.frame = CGRect(x: x, y: entry.layout.profile.name.bounds.minY + 2, width: 16, height: 16)
+            layer.addSublayer(node)
+            nameBadgeLayers.append(node)
+            x += 18
+        }
+        layer.addSublayer(highlightLayer)
+        layer.addSublayer(avatarBadgeLayer)
     }
 
     private func rebuildAccessibility(_ entry: PreparedFeedEntry) {
@@ -204,7 +270,13 @@ public final class FeedContentView: UIView {
     private static func fill(_ context: CGContext, size: CGSize, color: (CGFloat, CGFloat, CGFloat, CGFloat)) { context.setFillColor(red: color.0, green: color.1, blue: color.2, alpha: color.3); context.fill(CGRect(origin: .zero, size: size)) }
     private static func fill(_ context: CGContext, size: CGSize, color: FeedRGBA) { context.setFillColor(color.cgColor); context.fill(CGRect(origin: .zero, size: size)) }
     private static func strokeSeparator(_ context: CGContext, globalY: CGFloat, region: CGRect, color: FeedRGBA) { context.setStrokeColor(color.cgColor); context.move(to: CGPoint(x: 0, y: region.height - (globalY - region.minY))); context.addLine(to: CGPoint(x: region.width, y: region.height - (globalY - region.minY))); context.strokePath() }
-    private static func drawToolbarIcon(_ action: FeedAction, frame: CGRect, context: CGContext, color: FeedRGBA) { context.setStrokeColor(color.cgColor); context.strokeEllipse(in: frame.insetBy(dx: 2, dy: 2)); if action == .like { context.move(to: CGPoint(x: frame.midX, y: frame.minY)); context.addLine(to: CGPoint(x: frame.midX, y: frame.maxY)); context.strokePath() } }
+    private static func drawImage(_ image: CGImage, frame: CGRect, context: CGContext) {
+        context.saveGState()
+        context.translateBy(x: 0, y: frame.minY * 2 + frame.height)
+        context.scaleBy(x: 1, y: -1)
+        context.draw(image, in: frame)
+        context.restoreGState()
+    }
     private static func regions(_ layout: FeedItemLayout) -> [InteractionRegion] {
         var result = layout.profile.regions + layout.body.regions
         if let repost = layout.repost { result += repost.body.regions + (repost.card?.regions ?? []) }

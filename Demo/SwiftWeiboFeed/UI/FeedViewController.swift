@@ -88,12 +88,26 @@ final class FeedViewController: UIViewController {
                 try Task.checkCancellation()
                 guard let snapshot = await repository.transferPreparedEntries(matching: publication.token, environment: environment) else { throw CancellationError() }
                 guard let self, self.preparedEnvironment == environment else { return }
+                let isInitialLoad = self.timelineStore.count == 0
                 self.timelineStore.replace(with: snapshot)
                 for entry in snapshot { self.layoutCache.insert(entry.layout, cost: max(1, Int(entry.layout.height * CGFloat(environment.containerPixelWidth)))) }
                 self.requestedIndexes.removeAll()
                 self.prefetchCoordinator.setEntries(snapshot)
                 self.navigationItem.prompt = nil
                 self.tableView.reloadData()
+                if isInitialLoad {
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self else { return }
+                        self.view.layoutIfNeeded()
+                        self.tableView.setContentOffset(
+                            CGPoint(
+                                x: 0,
+                                y: -self.tableView.adjustedContentInset.top - WeiboVisualMetrics.topMargin
+                            ),
+                            animated: false
+                        )
+                    }
+                }
                 self.updatePrefetchWindow(direction: .forward)
             } catch is CancellationError {
                 // Width/environment changed while preparation was in flight.

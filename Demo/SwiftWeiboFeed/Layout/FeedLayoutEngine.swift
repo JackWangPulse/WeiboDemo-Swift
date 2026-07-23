@@ -146,7 +146,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let avatar = CGRect(x: WeiboVisualMetrics.contentInset, y: frame.minY + 12, width: avatarSide, height: avatarSide)
         let textX = avatar.maxX + WeiboVisualMetrics.nameAvatarSpacing
         let verificationFrame = item.user.isVerified ? CGRect(x: avatar.maxX - 8, y: avatar.maxY - 8, width: 12, height: 12) : nil
-        let name = makeSingleLineText(item.user.name, x: textX, y: frame.minY + 9, width: max(0, width - textX - 12), color: environment.palette.primaryText, fontSize: WeiboVisualMetrics.nameFontSize)
+        let name = makeSingleLineText(item.user.name, x: textX, y: frame.minY + 9, width: max(0, width - textX - 44), color: WeiboUserPresentation(user: item.user).nameColor, fontSize: WeiboVisualMetrics.nameFontSize)
         let timeText = item.createdAt.map(Self.formatProfileDate)
         let metaY = frame.minY + 30
         let metaFont = WeiboVisualMetrics.sourceFontSize
