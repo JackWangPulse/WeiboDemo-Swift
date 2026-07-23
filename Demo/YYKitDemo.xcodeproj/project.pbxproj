@@ -56,10 +56,12 @@
 		AB0000000000000000000001 /* FeedSignpost.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000011 /* FeedSignpost.swift */; };
 		AB0000000000000000000002 /* PerformanceSmokeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000012 /* PerformanceSmokeTests.swift */; };
 		AB0000000000000000000003 /* FeedCellSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0000000000000000000013 /* FeedCellSnapshotTests.swift */; };
+		ABDC320D1BEAFB870012A159 /* YYTextTagExample.m in Sources */ = {isa = PBXBuildFile; fileRef = ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */; };
 		AC0000000000000000000001 /* FeedTimelineStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC0000000000000000000011 /* FeedTimelineStore.swift */; };
 		AD0000000000000000000001 /* FeedReprepareExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD0000000000000000000011 /* FeedReprepareExecutor.swift */; };
 		AE0000000000000000000001 /* FeedEmoticonResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE0000000000000000000011 /* FeedEmoticonResolver.swift */; };
-		ABDC320D1BEAFB870012A159 /* YYTextTagExample.m in Sources */ = {isa = PBXBuildFile; fileRef = ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */; };
+		AF0000000000000000000001 /* WeiboResourceProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0000000000000000000011 /* WeiboResourceProviderTests.swift */; };
+		AF0000000000000000000002 /* WeiboResourceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF0000000000000000000012 /* WeiboResourceProvider.swift */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
 		D9067DF71B9856FF00F346EB /* YYTextMarkdownExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF61B9856FF00F346EB /* YYTextMarkdownExample.m */; };
@@ -295,15 +297,13 @@
 		AB0000000000000000000011 /* FeedSignpost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedSignpost.swift; sourceTree = "<group>"; };
 		AB0000000000000000000012 /* PerformanceSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PerformanceSmokeTests.swift; sourceTree = "<group>"; };
 		AB0000000000000000000013 /* FeedCellSnapshotTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCellSnapshotTests.swift; sourceTree = "<group>"; };
+		ABDC320B1BEAFB870012A159 /* YYTextTagExample.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextTagExample.h; sourceTree = "<group>"; };
+		ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = YYTextTagExample.m; sourceTree = "<group>"; };
 		AC0000000000000000000011 /* FeedTimelineStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedTimelineStore.swift; sourceTree = "<group>"; };
 		AD0000000000000000000011 /* FeedReprepareExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedReprepareExecutor.swift; sourceTree = "<group>"; };
 		AE0000000000000000000011 /* FeedEmoticonResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedEmoticonResolver.swift; sourceTree = "<group>"; };
-		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
-		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
-		A80000000000000000000011 /* FeedRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepository.swift; sourceTree = "<group>"; };
-		A80000000000000000000012 /* FeedRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepositoryTests.swift; sourceTree = "<group>"; };
-		ABDC320B1BEAFB870012A159 /* YYTextTagExample.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextTagExample.h; sourceTree = "<group>"; };
-		ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = YYTextTagExample.m; sourceTree = "<group>"; };
+		AF0000000000000000000011 /* WeiboResourceProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeiboResourceProviderTests.swift; sourceTree = "<group>"; };
+		AF0000000000000000000012 /* WeiboResourceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WeiboResourceProvider.swift; sourceTree = "<group>"; };
 		D9067DEF1B975D3900F346EB /* YYTextExampleHelper.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextExampleHelper.h; sourceTree = "<group>"; };
 		D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = YYTextExampleHelper.m; sourceTree = "<group>"; };
 		D9067DF21B9813B500F346EB /* YYTextEditExample.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; path = YYTextEditExample.h; sourceTree = "<group>"; };
@@ -680,25 +680,60 @@
 			path = SwiftWeiboFeed;
 			sourceTree = "<group>";
 		};
-		AB0000000000000000000027 /* Performance */ = {
+		A10000000000000000000023 /* App */ = {
 			isa = PBXGroup;
 			children = (
-				AB0000000000000000000011 /* FeedSignpost.swift */,
+				A10000000000000000000011 /* AppDelegate.swift */,
+				A10000000000000000000012 /* SceneDelegate.swift */,
 			);
-			path = Performance;
+			path = App;
 			sourceTree = "<group>";
 		};
-		A90000000000000000000027 /* UI */ = {
+		A10000000000000000000024 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
-				AD0000000000000000000011 /* FeedReprepareExecutor.swift */,
-				AC0000000000000000000011 /* FeedTimelineStore.swift */,
-				A90000000000000000000011 /* FeedContentView.swift */,
-				A90000000000000000000012 /* FeedCell.swift */,
-				AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */,
-				AA0000000000000000000012 /* FeedViewController.swift */,
+				A10000000000000000000013 /* Info.plist */,
+				AF0000000000000000000012 /* WeiboResourceProvider.swift */,
 			);
-			path = UI;
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000025 /* SwiftWeiboFeedTests */ = {
+			isa = PBXGroup;
+			children = (
+				AB0000000000000000000012 /* PerformanceSmokeTests.swift */,
+				AB0000000000000000000013 /* FeedCellSnapshotTests.swift */,
+				A90000000000000000000013 /* FeedCellReuseTests.swift */,
+				AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */,
+				A80000000000000000000012 /* FeedRepositoryTests.swift */,
+				A70000000000000000000011 /* SystemImagePipelineTests.swift */,
+				A10000000000000000000014 /* TargetSmokeTests.swift */,
+				A20000000000000000000012 /* FeedModelsTests.swift */,
+				A30000000000000000000011 /* FeedTextParserTests.swift */,
+				A40000000000000000000011 /* FeedLayoutEngineTests.swift */,
+				A60000000000000000000011 /* AsyncRenderLayerTests.swift */,
+				AF0000000000000000000011 /* WeiboResourceProviderTests.swift */,
+				A20000000000000000000026 /* Fixtures */,
+			);
+			path = SwiftWeiboFeedTests;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000026 /* Fixtures */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000011 /* FeedFixtureLoader.swift */,
+			);
+			path = Fixtures;
+			sourceTree = "<group>";
+		};
+		A20000000000000000000027 /* Domain */ = {
+			isa = PBXGroup;
+			children = (
+				A20000000000000000000013 /* FeedModels.swift */,
+				A20000000000000000000014 /* FeedIdentity.swift */,
+				A80000000000000000000011 /* FeedRepository.swift */,
+			);
+			path = Domain;
 			sourceTree = "<group>";
 		};
 		A30000000000000000000027 /* Parsing */ = {
@@ -745,50 +780,25 @@
 			path = Images;
 			sourceTree = "<group>";
 		};
-		A20000000000000000000027 /* Domain */ = {
+		A90000000000000000000027 /* UI */ = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000013 /* FeedModels.swift */,
-				A20000000000000000000014 /* FeedIdentity.swift */,
-				A80000000000000000000011 /* FeedRepository.swift */,
+				AD0000000000000000000011 /* FeedReprepareExecutor.swift */,
+				AC0000000000000000000011 /* FeedTimelineStore.swift */,
+				A90000000000000000000011 /* FeedContentView.swift */,
+				A90000000000000000000012 /* FeedCell.swift */,
+				AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */,
+				AA0000000000000000000012 /* FeedViewController.swift */,
 			);
-			path = Domain;
+			path = UI;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000023 /* App */ = {
+		AB0000000000000000000027 /* Performance */ = {
 			isa = PBXGroup;
 			children = (
-				A10000000000000000000011 /* AppDelegate.swift */,
-				A10000000000000000000012 /* SceneDelegate.swift */,
+				AB0000000000000000000011 /* FeedSignpost.swift */,
 			);
-			path = App;
-			sourceTree = "<group>";
-		};
-		A10000000000000000000024 /* Resources */ = {
-			isa = PBXGroup;
-			children = (
-				A10000000000000000000013 /* Info.plist */,
-			);
-			path = Resources;
-			sourceTree = "<group>";
-		};
-		A10000000000000000000025 /* SwiftWeiboFeedTests */ = {
-			isa = PBXGroup;
-			children = (
-				AB0000000000000000000012 /* PerformanceSmokeTests.swift */,
-				AB0000000000000000000013 /* FeedCellSnapshotTests.swift */,
-				A90000000000000000000013 /* FeedCellReuseTests.swift */,
-				AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */,
-				A80000000000000000000012 /* FeedRepositoryTests.swift */,
-				A70000000000000000000011 /* SystemImagePipelineTests.swift */,
-				A10000000000000000000014 /* TargetSmokeTests.swift */,
-				A20000000000000000000012 /* FeedModelsTests.swift */,
-				A30000000000000000000011 /* FeedTextParserTests.swift */,
-				A40000000000000000000011 /* FeedLayoutEngineTests.swift */,
-				A60000000000000000000011 /* AsyncRenderLayerTests.swift */,
-				A20000000000000000000026 /* Fixtures */,
-			);
-			path = SwiftWeiboFeedTests;
+			path = Performance;
 			sourceTree = "<group>";
 		};
 		A20000000000000000000026 /* Fixtures */ = {
@@ -1590,6 +1600,7 @@
 				A90000000000000000000002 /* FeedCell.swift in Sources */,
 				AA0000000000000000000001 /* FeedPrefetchCoordinator.swift in Sources */,
 				AA0000000000000000000002 /* FeedViewController.swift in Sources */,
+				AF0000000000000000000002 /* WeiboResourceProvider.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1609,6 +1620,7 @@
 				A70000000000000000000001 /* SystemImagePipelineTests.swift in Sources */,
 				A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */,
 				AA0000000000000000000003 /* FeedPrefetchCoordinatorTests.swift in Sources */,
+				AF0000000000000000000001 /* WeiboResourceProviderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
