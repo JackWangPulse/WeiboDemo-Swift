@@ -6,7 +6,7 @@ final class FeedRepositoryTests: XCTestCase {
         let repository = FeedRepository()
         let page = try decodePage(idsAndTexts: [("1", "one"), ("1", "replacement"), ("2", "two")])
 
-        let changes = try await repository.apply(page: page, environment: environment())
+        let changes = try await repository.apply(page: page, environment: environment()).changes
         let snapshot = await repository.snapshot()
 
         XCTAssertEqual(snapshot.map(\.item.id.rawValue), ["1", "2"])
@@ -19,17 +19,17 @@ final class FeedRepositoryTests: XCTestCase {
 
     func testBodyChangeIncrementsVersionWhileToolbarChangeReusesLayoutVersion() async throws {
         let repository = FeedRepository()
-        try await repository.apply(page: decodePage(idsAndTexts: [("1", "one")]), environment: environment())
+        _ = try await repository.apply(page: decodePage(idsAndTexts: [("1", "one")]), environment: environment())
         let firstSnapshot = await repository.snapshot()
         let first = try XCTUnwrap(firstSnapshot.first)
 
-        let contentChanges = try await repository.apply(page: decodePage(idsAndTexts: [("1", "changed")]), environment: environment())
+        let contentChanges = try await repository.apply(page: decodePage(idsAndTexts: [("1", "changed")]), environment: environment()).changes
         let secondSnapshot = await repository.snapshot()
         let second = try XCTUnwrap(secondSnapshot.first)
         XCTAssertEqual(contentChanges, [.contentChanged(FeedID(rawValue: "1"))])
         XCTAssertEqual(second.identity.contentVersion, first.identity.contentVersion + 1)
 
-        let toolbarChanges = try await repository.apply(page: decodePage(idsAndTexts: [("1", "changed")], counts: (1, 2, 3)), environment: environment())
+        let toolbarChanges = try await repository.apply(page: decodePage(idsAndTexts: [("1", "changed")], counts: (1, 2, 3)), environment: environment()).changes
         let thirdSnapshot = await repository.snapshot()
         let third = try XCTUnwrap(thirdSnapshot.first)
         XCTAssertEqual(toolbarChanges, [.toolbarChanged(FeedID(rawValue: "1"))])
@@ -39,8 +39,8 @@ final class FeedRepositoryTests: XCTestCase {
 
     func testMovesAndDeletesAreDeterministic() async throws {
         let repository = FeedRepository()
-        try await repository.apply(page: decodePage(idsAndTexts: [("1", "a"), ("2", "b"), ("3", "c")]), environment: environment())
-        let changes = try await repository.apply(page: decodePage(idsAndTexts: [("3", "c"), ("1", "a")]), environment: environment())
+        _ = try await repository.apply(page: decodePage(idsAndTexts: [("1", "a"), ("2", "b"), ("3", "c")]), environment: environment())
+        let changes = try await repository.apply(page: decodePage(idsAndTexts: [("3", "c"), ("1", "a")]), environment: environment()).changes
         XCTAssertEqual(changes, [
             .deleted(FeedID(rawValue: "2"), 1),
             .moved(FeedID(rawValue: "3"), 2, 0),
@@ -51,10 +51,10 @@ final class FeedRepositoryTests: XCTestCase {
     func testEnvironmentChangeRelayoutsWithoutChangingContentVersion() async throws {
         let repository = FeedRepository()
         let page = try decodePage(idsAndTexts: [("1", "one")])
-        try await repository.apply(page: page, environment: environment())
+        _ = try await repository.apply(page: page, environment: environment())
         let firstSnapshot = await repository.snapshot()
         let first = try XCTUnwrap(firstSnapshot.first)
-        let changes = try await repository.apply(page: page, environment: environment(width: 400, theme: 1))
+        let changes = try await repository.apply(page: page, environment: environment(width: 400, theme: 1)).changes
         let secondSnapshot = await repository.snapshot()
         let second = try XCTUnwrap(secondSnapshot.first)
         XCTAssertTrue(changes.isEmpty)
@@ -84,7 +84,7 @@ final class FeedRepositoryTests: XCTestCase {
         let older = Task { try await repository.apply(page: oldPage, environment: layoutEnvironment) }
         await fulfillment(of: [oldPreparationEntered], timeout: 1)
 
-        let newerResult: Result<[FeedChange], Error>
+        let newerResult: Result<FeedPublication, Error>
         do {
             newerResult = .success(try await repository.apply(page: newPage, environment: layoutEnvironment))
         } catch {

@@ -54,6 +54,16 @@ public enum FeedChange: Equatable, Sendable {
     case toolbarChanged(FeedID)
 }
 
+public struct FeedPublicationToken: Hashable, Sendable {
+    public let generation: UInt64
+    public let environment: FeedLayoutEnvironment
+}
+
+public struct FeedPublication: Sendable {
+    public let changes: [FeedChange]
+    public let token: FeedPublicationToken
+}
+
 public struct PreparedFeedEntry: Sendable {
     public let item: FeedItem
     public let identity: FeedContentIdentity
@@ -78,6 +88,7 @@ public actor FeedRepository {
     private struct State: Sendable {
         var entries: [PreparedFeedEntry] = []
         var environment: FeedLayoutEnvironment?
+        var publication: FeedPublicationToken?
     }
 
     private let prepareLayout: LayoutPreparation
@@ -112,7 +123,7 @@ public actor FeedRepository {
         }
     }
 
-    public func apply(page: FeedPage, environment: FeedLayoutEnvironment) async throws -> [FeedChange] {
+    public func apply(page: FeedPage, environment: FeedLayoutEnvironment) async throws -> FeedPublication {
         generation &+= 1
         let requestGeneration = generation
         let oldState = state
@@ -174,15 +185,17 @@ public actor FeedRepository {
 
         try Task.checkCancellation()
         guard requestGeneration == generation else { throw CancellationError() }
-        state = State(entries: complete, environment: environment)
-        return changes
+        let token = FeedPublicationToken(generation: requestGeneration, environment: environment)
+        state = State(entries: complete, environment: environment, publication: token)
+        return FeedPublication(changes: changes, token: token)
     }
 
     public func snapshot() -> [PreparedFeedEntry] { state.entries }
 
     /// Atomically transfers heavyweight prepared ownership. No later request can
     /// be cleared by a stale snapshot/release pair because there is no second step.
-    public func transferPreparedEntries() -> [PreparedFeedEntry] {
+    public func transferPreparedEntries(matching token: FeedPublicationToken, environment: FeedLayoutEnvironment) -> [PreparedFeedEntry]? {
+        guard token.environment == environment, state.publication == token, state.environment == environment else { return nil }
         let entries = state.entries
         state = State()
         return entries

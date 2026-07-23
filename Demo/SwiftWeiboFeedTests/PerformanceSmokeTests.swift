@@ -154,8 +154,8 @@ final class PerformanceSmokeTests: XCTestCase {
         let repository = FeedRepository()
         let page = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["0", "1", "2"]))
         let environment = FeedLayoutEnvironment(width: 414, scale: 2, contentSizeCategory: .large, themeVersion: 0, algorithmVersion: 1)
-        _ = try await repository.apply(page: page, environment: environment)
-        var entries: [PreparedFeedEntry]? = await repository.transferPreparedEntries()
+        let publication = try await repository.apply(page: page, environment: environment)
+        var entries: [PreparedFeedEntry]? = await repository.transferPreparedEntries(matching: publication.token, environment: environment)
         weak let distantStorage = entries?[2].layout.body.storage
         let store = FeedTimelineStore(); store.replace(with: try XCTUnwrap(entries))
         let cache = FeedLayoutCache(); entries?.forEach { cache.insert($0.layout, cost: 1) }
@@ -175,17 +175,66 @@ final class PerformanceSmokeTests: XCTestCase {
         let coordinator = FeedPrefetchCoordinator(itemCount: entries.count)
         let update = coordinator.update(visible: 0..<1, requested: [], direction: .forward)
         let target = try XCTUnwrap(update.jobs.first { $0.kind == .layout && $0.index == 1 })
-        let record = store.record(at: target.index)
-        let restored = try await Task.detached {
-            let parsed = FeedTextParser().parse(record.item.text)
-            let layout = try await FeedLayoutEngine().layout(identity: record.identity, item: record.item, parsedBody: parsed, parsedRepost: nil, environment: record.expectedLayoutIdentity.environment)
-            return PreparedFeedEntry(item: record.item, identity: record.identity, parsed: parsed, layout: layout)
-        }.value
-        XCTAssertTrue(store.install(restored, at: target.index, generation: record.generation))
+        let record = store.record(at: target.index), installed = expectation(description: "directional target installed")
+        let executor = FeedReprepareExecutor(capacity: 4, concurrency: 2)
+        XCTAssertTrue(executor.submit(index: target.index, record: record, priority: target.priority) { index, generation, result in
+            guard case let .success(entry) = result else { return }
+            XCTAssertTrue(store.install(entry, at: index, generation: generation)); installed.fulfill()
+        })
+        await fulfillment(of: [installed], timeout: 2)
         let cell = FeedCell(style: .default, reuseIdentifier: nil)
         cell.apply(try XCTUnwrap(store.prepared(at: target.index)), pipeline: EmptyImagePipeline())
         XCTAssertEqual(cell.representedID, record.item.id)
         XCTAssertFalse(cell.contentNode.isAccessibilityElement, "preprepared row must not enter loading placeholder state")
+    }
+
+    @MainActor
+    func testReprepareDirectionThrashStaysBoundedAndCancelledJobsNeverInstall() async throws {
+        let entries = try await makeEntries(count: 8), store = FeedTimelineStore(); store.replace(with: entries)
+        store.evictDistantLayouts(retaining: [])
+        let gate = ReprepareWorkerGate(), executor = FeedReprepareExecutor(capacity: 4, concurrency: 2, startHook: { record in try await gate.start(record) })
+        var installed: [Int] = []
+        for index in 0..<8 {
+            _ = executor.submit(index: index, record: store.record(at: index), priority: index < 2 ? .forward : .trailing) { index, generation, result in
+                guard case let .success(entry) = result, store.install(entry, at: index, generation: generation) else { return }
+                installed.append(index)
+            }
+        }
+        await gate.waitUntilStarted(2)
+        XCTAssertEqual(executor.occupiedCountForTesting, 4)
+        let peak = await gate.peak
+        XCTAssertLessThanOrEqual(peak, 2)
+        for index in 0..<4 { executor.cancel(index: index) }
+        XCTAssertEqual(executor.occupiedCountForTesting, 2, "pending cancellation is immediate, but active cancelled work keeps slots until workers exit")
+        XCTAssertEqual(executor.runningCountForTesting, 2)
+        XCTAssertEqual(executor.pendingCountForTesting, 0)
+        await gate.releaseAll()
+        while executor.occupiedCountForTesting != 0 { await Task.yield() }
+        XCTAssertTrue(installed.isEmpty)
+
+        let targetInstalled = expectation(description: "new directional target")
+        XCTAssertTrue(executor.submit(index: 5, record: store.record(at: 5), priority: .visible) { index, generation, result in
+            guard case let .success(entry) = result else { return }
+            XCTAssertTrue(store.install(entry, at: index, generation: generation)); targetInstalled.fulfill()
+        })
+        await fulfillment(of: [targetInstalled], timeout: 2)
+        let cell = FeedCell(style: .default, reuseIdentifier: nil); cell.apply(try XCTUnwrap(store.prepared(at: 5)), pipeline: EmptyImagePipeline())
+        XCTAssertEqual(cell.representedID, entries[5].item.id)
+    }
+
+    @MainActor
+    func testRepreparePendingQueuePromotesVisibleAheadOfDistantWork() async throws {
+        let entries = try await makeEntries(count: 3), gate = ReprepareWorkerGate()
+        let store = FeedTimelineStore(); store.replace(with: entries)
+        let executor = FeedReprepareExecutor(capacity: 3, concurrency: 1, startHook: { try await gate.start($0) })
+        for (index, priority) in [(0, FeedPreparationPriority.trailing), (1, .trailing), (2, .visible)] {
+            XCTAssertTrue(executor.submit(index: index, record: store.record(at: index), priority: priority) { _, _, _ in })
+        }
+        await gate.waitUntilStarted(1); await gate.releaseAll()
+        await gate.waitUntilStarted(3)
+        while executor.occupiedCountForTesting != 0 { await Task.yield() }
+        let startedIDs = await gate.startedIDs
+        XCTAssertEqual(startedIDs, [entries[0].item.id, entries[2].item.id, entries[1].item.id])
     }
 
     @MainActor
@@ -198,16 +247,16 @@ final class PerformanceSmokeTests: XCTestCase {
         XCTAssertEqual(store.prepared(at: 0)?.item.id, replacement[0].item.id)
     }
 
-    func testRepositoryAtomicTransferCannotClearNewerApply() async throws {
+    func testOldPublicationTransferIsRejectedAfterNewApplyPublishes() async throws {
         let repository = FeedRepository(), environment = FeedLayoutEnvironment(width: 414, scale: 2, contentSizeCategory: .large, themeVersion: 0, algorithmVersion: 1)
         let oldPage = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["old"]))
-        _ = try await repository.apply(page: oldPage, environment: environment)
-        let old = await repository.transferPreparedEntries()
+        let oldPublication = try await repository.apply(page: oldPage, environment: environment)
         let newPage = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["new"]))
-        _ = try await repository.apply(page: newPage, environment: environment)
-        XCTAssertEqual(old.map(\.item.id.rawValue), ["old"])
-        let current = await repository.snapshot().map(\.item.id.rawValue)
-        XCTAssertEqual(current, ["new"])
+        let newPublication = try await repository.apply(page: newPage, environment: environment)
+        let staleTransfer = await repository.transferPreparedEntries(matching: oldPublication.token, environment: environment)
+        XCTAssertNil(staleTransfer)
+        let currentTransfer = await repository.transferPreparedEntries(matching: newPublication.token, environment: environment)
+        XCTAssertEqual(currentTransfer?.map(\.item.id.rawValue), ["new"])
     }
 
     func testFiveHundredMixedItemsPrepareOffMainWithExactCachedHeights() async throws {
@@ -286,4 +335,25 @@ private actor EmptyImagePipeline: ImagePipeline {
     func image(for request: ImageRequest) async throws -> ImageResponse { throw CancellationError() }
     func prefetch(_ requests: [ImageRequest]) async {}
     func cancelPrefetch(_ requests: [ImageRequest]) async {}
+}
+
+private actor ReprepareWorkerGate {
+    private var active = 0
+    private(set) var peak = 0
+    private var started = 0
+    private(set) var startedIDs: [FeedID] = []
+    private var released = false
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+    func start(_ record: FeedTimelineStore.Record) async throws {
+        active += 1; started += 1; startedIDs.append(record.item.id); peak = max(peak, active)
+        if !released { await withCheckedContinuation { releaseWaiters.append($0) } }
+        active -= 1
+        try Task.checkCancellation()
+    }
+    func waitUntilStarted(_ target: Int) async {
+        while started < target { await Task.yield() }
+    }
+    func releaseAll() {
+        released = true; let waiters = releaseWaiters; releaseWaiters.removeAll(); waiters.forEach { $0.resume() }
+    }
 }
