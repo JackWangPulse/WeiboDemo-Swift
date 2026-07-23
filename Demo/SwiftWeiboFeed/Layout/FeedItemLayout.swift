@@ -65,10 +65,24 @@ public struct RepostLayout: Sendable {
 public struct ToolbarLayout: Sendable {
     public let frame: CGRect
     public let regions: [InteractionRegion]
+    public let items: [ToolbarItemLayout]
 
-    public init(frame: CGRect, regions: [InteractionRegion]) {
+    public init(frame: CGRect, regions: [InteractionRegion], items: [ToolbarItemLayout] = []) {
         self.frame = frame
         self.regions = regions
+        self.items = items
+    }
+}
+
+public struct ToolbarItemLayout: Sendable {
+    public let action: FeedAction
+    public let iconFrame: CGRect
+    public let count: TextLayout
+
+    public init(action: FeedAction, iconFrame: CGRect, count: TextLayout) {
+        self.action = action
+        self.iconFrame = iconFrame
+        self.count = count
     }
 }
 
@@ -132,6 +146,7 @@ public struct FeedItemLayout: Sendable {
         if let tag { frames.append(contentsOf: tag.allFrames) }
         frames.append(toolbar.frame)
         frames.append(contentsOf: toolbar.regions.flatMap(\.rects))
+        frames.append(contentsOf: toolbar.items.flatMap { [$0.iconFrame, $0.count.bounds] })
         return frames
     }
 }

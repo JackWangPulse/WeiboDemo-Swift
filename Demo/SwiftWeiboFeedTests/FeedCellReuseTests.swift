@@ -29,7 +29,7 @@ final class FeedCellReuseTests: XCTestCase {
         cell.apply(b, pipeline: pipeline)
         await pipeline.waitForRequests(4)
         XCTAssertGreaterThan(cell.generation, firstGeneration)
-        let cancelledA = await pipeline.wasCancelled(urlContaining: "A")
+        let cancelledA = pipeline.wasCancelled(urlContaining: "A")
         XCTAssertTrue(cancelledA)
 
         await pipeline.complete(urlContaining: "B", color: 0x22)
@@ -51,6 +51,74 @@ final class FeedCellReuseTests: XCTestCase {
         XCTAssertTrue(labels.contains("Comment"))
         XCTAssertTrue(labels.contains("Like"))
         XCTAssertFalse(view.subviews.contains { $0 is UIButton })
+        XCTAssertEqual(entry.layout.toolbar.items.map { $0.count.storage.lines.count }, [1, 1, 1])
+    }
+
+    func testTouchAndAccessibilityActivationDispatchSameAction() async throws {
+        let entry = try await makeEntry(id: "A", text: "hello #swift#", pictures: 0)
+        let view = FeedContentView(); view.apply(entry)
+        var actions: [FeedAction] = []; view.onAction = { actions.append($0) }
+        let topic = try XCTUnwrap(entry.layout.body.regions.first { if case .topic = $0.action { true } else { false } })
+        let point = topic.rects[0].center
+        view.beginInteraction(at: point); view.endInteraction(at: point)
+        let toolbarElement = try XCTUnwrap((view.accessibilityElements as? [FeedAccessibilityElement])?.first { $0.action == .like })
+        XCTAssertTrue(toolbarElement.accessibilityActivate())
+        XCTAssertEqual(actions, [topic.action, .like])
+        XCTAssertEqual(toolbarElement.accessibilityFrameInContainerSpace, entry.layout.toolbar.regions[2].rects[0])
+        XCTAssertTrue(toolbarElement.accessibilityTraits.contains(.button))
+    }
+
+    func testImageRequestsUseExactPixelsAndContentsScale() async throws {
+        let entry = try await makeEntry(id: "A", text: "body", pictures: 1)
+        let pipeline = ControllableCellImagePipeline(); let cell = FeedCell(style: .default, reuseIdentifier: nil)
+        cell.apply(entry, pipeline: pipeline); await pipeline.waitForRequests(2)
+        let sizes = await pipeline.requestSizes()
+        XCTAssertEqual(sizes, [PixelSize(width: 80, height: 80), PixelSize(width: 296, height: 296)])
+        await pipeline.complete(urlContaining: "A", color: 0x33); await Task.yield()
+        XCTAssertTrue(cell.contentNode.imageLayers.allSatisfy { $0.contentsScale == 2 })
+    }
+
+    func testEverySemanticBitmapContainsDrawnPixelsWithinItsBounds() async throws {
+        let entry = try await makeComplexEntry()
+        let executor = CellDisplayExecutor()
+        var commits: [RenderRegion: CGImage] = [:]
+        let view = FeedContentView(layerFactory: {
+            AsyncRenderLayer(executor: executor, contextFactory: makeCellBitmap) { identity, image in commits[identity.region] = image }
+        })
+        view.apply(entry); view.display(entry: entry, generation: 1, scale: 2)
+        executor.runAll(); await drainMainActor()
+        for region in [RenderRegion.profile, .body, .repost, .card, .tag, .toolbar] {
+            let image = try XCTUnwrap(commits[region], "missing \(region)")
+            XCTAssertTrue(image.hasPixelVariation, "\(region) must draw visible pixels inside its bitmap")
+        }
+    }
+
+    func testCellReplacementCancelsBlockedADrawsBeforeBCommits() async throws {
+        let a = try await makeEntry(id: "A", text: "A", pictures: 0)
+        let b = try await makeEntry(id: "B", text: "B", pictures: 0)
+        let executor = CellDisplayExecutor(); var commits: [RenderIdentity] = []
+        let view = FeedContentView(layerFactory: { AsyncRenderLayer(executor: executor, contextFactory: makeCellBitmap) { identity, _ in commits.append(identity) } })
+        let cell = FeedCell(style: .default, reuseIdentifier: nil, contentNode: view)
+        let pipeline = ControllableCellImagePipeline()
+        cell.apply(a, pipeline: pipeline)
+        let aCount = executor.count
+        cell.apply(b, pipeline: pipeline)
+        executor.run(from: aCount); executor.run(to: aCount)
+        await drainMainActor()
+        XCTAssertFalse(commits.isEmpty)
+        XCTAssertTrue(commits.allSatisfy { $0.layout.content.itemID == b.item.id && $0.generation == cell.generation })
+    }
+
+    func testCardAndRepostBindingsMapFramesAndReplacementRemovesOldLayers() async throws {
+        let complex = try await makeComplexEntry(); let simple = try await makeEntry(id: "B", text: "B", pictures: 0)
+        let view = FeedContentView(); view.apply(complex)
+        let bindings = view.imageBindings(for: complex, scale: 2)
+        XCTAssertEqual(bindings.map(\.1), [complex.layout.mediaFrames[0], complex.layout.repost!.mediaFrames[0], complex.layout.repost!.card!.imageFrame!, complex.layout.card!.imageFrame!])
+        let oldLayers = view.imageLayers
+        view.apply(simple)
+        XCTAssertTrue(oldLayers.allSatisfy { $0.superlayer == nil && $0.contents == nil })
+        XCTAssertEqual(view.imageLayers.count, 1)
+        XCTAssertTrue(view.mediaLayers.isEmpty)
     }
 
     private func makeEntry(id: String, text: String, pictures: Int) async throws -> PreparedFeedEntry {
@@ -63,23 +131,34 @@ final class FeedCellReuseTests: XCTestCase {
         let layout = try await FeedLayoutEngine().layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: nil, environment: environment)
         return PreparedFeedEntry(item: item, identity: identity, parsed: parsed, layout: layout)
     }
+
+    private func makeComplexEntry() async throws -> PreparedFeedEntry {
+        let json = "{\"id\":\"complex\",\"user\":{\"id\":\"u\",\"name\":\"Profile Name\",\"verified\":false},\"text\":\"body text\",\"pics\":[{\"url\":\"https://example.com/main-picture.png\"}],\"page_info\":{\"page_title\":\"Main Card\",\"page_url\":\"https://example.com/main\",\"page_pic\":\"https://example.com/main-card.png\"},\"tag_struct\":[{\"name\":\"Tag Text\"}],\"retweeted_status\":{\"id\":\"r\",\"user\":{\"id\":\"ru\",\"name\":\"Reposter\",\"verified\":false},\"text\":\"repost text\",\"pics\":[{\"url\":\"https://example.com/repost-picture.png\"}],\"page_info\":{\"page_title\":\"Repost Card\",\"page_url\":\"https://example.com/repost\",\"page_pic\":\"https://example.com/repost-card.png\"}},\"reposts_count\":12,\"comments_count\":34,\"attitudes_count\":56}"
+        let item = try JSONDecoder.weibo.decode(FeedItem.self, from: Data(json.utf8)); let identity = FeedContentIdentity(itemID: item.id, contentVersion: 0)
+        let parsed = FeedTextParser().parse(item.text); let repostParsed = item.repost.map { FeedTextParser().parse($0.text) }
+        let environment = FeedLayoutEnvironment(width: 320, scale: 2, contentSizeCategory: .large, themeVersion: 1, algorithmVersion: 1)
+        let layout = try await FeedLayoutEngine().layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: repostParsed, environment: environment)
+        return PreparedFeedEntry(item: item, identity: identity, parsed: parsed, layout: layout)
+    }
+
+    private func drainMainActor() async { await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } } }
 }
 
 private actor ControllableCellImagePipeline: ImagePipeline {
     struct Pending { let request: ImageRequest; let continuation: CheckedContinuation<ImageResponse, Error> }
     private var pending: [Pending] = []
-    private var cancelled: [URL] = []
+    nonisolated let cancellations = CellCancellationRecorder()
 
     func image(for request: ImageRequest) async throws -> ImageResponse {
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { pending.append(Pending(request: request, continuation: $0)) }
-        } onCancel: { Task { await self.recordCancellation(request.url) } }
+        } onCancel: { self.cancellations.record(request.url) }
     }
     func prefetch(_ requests: [ImageRequest]) async {}
     func cancelPrefetch(_ requests: [ImageRequest]) async {}
-    private func recordCancellation(_ url: URL) { cancelled.append(url) }
     func waitForRequests(_ count: Int) async { while pending.count < count { await Task.yield() } }
-    func wasCancelled(urlContaining value: String) -> Bool { cancelled.contains { $0.absoluteString.contains(value) } }
+    nonisolated func wasCancelled(urlContaining value: String) -> Bool { cancellations.contains(value) }
+    func requestSizes() -> [PixelSize] { pending.map(\.request.targetPixelSize) }
     func complete(urlContaining value: String, color: UInt8) {
         let matches = pending.filter { $0.request.url.absoluteString.contains(value) }
         pending.removeAll { $0.request.url.absoluteString.contains(value) }
@@ -92,5 +171,33 @@ private actor ControllableCellImagePipeline: ImagePipeline {
     }
 }
 
+private final class CellCancellationRecorder: @unchecked Sendable {
+    private let lock = NSLock(); private var urls: [URL] = []
+    func record(_ url: URL) { lock.withLock { urls.append(url) } }
+    func contains(_ value: String) -> Bool { lock.withLock { urls.contains { $0.absoluteString.contains(value) } } }
+}
+
 private extension CGRect { var center: CGPoint { CGPoint(x: midX, y: midY) } }
 private extension CGImage { var pixelByte: UInt8? { dataProvider?.data.flatMap { CFDataGetBytePtr($0)?[0] } } }
+private extension CGImage {
+    var hasPixelVariation: Bool {
+        guard let data = dataProvider?.data, let bytes = CFDataGetBytePtr(data), CFDataGetLength(data) > 1 else { return false }
+        let first = bytes[0]
+        return (1..<CFDataGetLength(data)).contains { bytes[$0] != first }
+    }
+}
+
+private final class CellDisplayExecutor: DisplayExecutor, @unchecked Sendable {
+    private var blocks: [@Sendable () -> Void] = []
+    var count: Int { blocks.count }
+    func execute(_ block: @escaping @Sendable () -> Void) { blocks.append(block) }
+    func runAll() { run(from: 0) }
+    func run(from index: Int) { for block in blocks.dropFirst(index) { block() } }
+    func run(to end: Int) { for block in blocks.prefix(end) { block() } }
+}
+
+private func makeCellBitmap(width: Int, height: Int, opaque: Bool) -> BitmapContext? {
+    let alpha: CGImageAlphaInfo = opaque ? .noneSkipFirst : .premultipliedFirst
+    guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: alpha.rawValue) else { return nil }
+    return BitmapContext(context: context, makeImage: { context.makeImage() })
+}

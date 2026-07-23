@@ -113,6 +113,15 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                 accessibilityLabel: value.1
             )
         }
+        let counts = [item.repostCount, item.commentCount, item.likeCount]
+        let toolbarItems = actions.enumerated().map { index, value in
+            let sectionX = CGFloat(index) * sectionWidth
+            return ToolbarItemLayout(
+                action: value.0,
+                iconFrame: CGRect(x: sectionX + sectionWidth / 2 - 26, y: cursor + 14, width: 16, height: 16),
+                count: makeSingleLineText(String(counts[index]), x: sectionX + sectionWidth / 2 - 4, y: cursor + 12, width: 34, color: .secondaryLabel, fontSize: 13)
+            )
+        }
         let height = toolbarFrame.maxY + 8
         try checkCancellation(cancellation)
         return FeedItemLayout(
@@ -124,7 +133,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             repost: repostLayout,
             card: card,
             tag: tag,
-            toolbar: ToolbarLayout(frame: toolbarFrame, regions: toolbarRegions)
+            toolbar: ToolbarLayout(frame: toolbarFrame, regions: toolbarRegions, items: toolbarItems)
         )
     }
 

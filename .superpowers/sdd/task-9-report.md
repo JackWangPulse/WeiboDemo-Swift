@@ -18,3 +18,12 @@ Verification:
 - Focused simulator test execution produced an incomplete result bundle because the selected simulator did not finish becoming available; no runtime result is claimed.
 - `plutil -lint Demo/YYKitDemo.xcodeproj/project.pbxproj`: OK.
 - `git diff --check`: clean.
+
+## Review follow-up
+
+- Corrected CoreText coordinate conversion to use each semantic render region's bitmap height and global-to-local origin translation.
+- Added immutable toolbar item layouts with deterministic vector-icon and count frames computed by `FeedLayoutEngine`; rendering now includes counts, icons, backgrounds, and separators.
+- Added touch-up-inside-style action dispatch and action-carrying virtual accessibility elements. Multi-rect semantic regions produce one unioned element, and profile announcements are no longer duplicated.
+- Added injected render-layer/content-node seams for deterministic cell-level A/B draw-race verification.
+- Expanded tests for all-region bitmap pixels, exact image pixel requests and scale, card/repost bindings, old layer removal, deterministic cancellation, touch and VoiceOver routing, frames, traits, toolbar counts, and stale draw identity.
+- Fresh Xcode 27 beta `build-for-testing`: `TEST BUILD SUCCEEDED`; project plist lint and diff checks passed. Simulator execution remained unavailable (the runner stopped after build without test events), so no new runtime-pass claim is made.

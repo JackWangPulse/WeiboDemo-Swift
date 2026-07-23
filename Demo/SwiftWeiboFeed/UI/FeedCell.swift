@@ -2,12 +2,17 @@ import UIKit
 
 @MainActor
 public final class FeedCell: UITableViewCell {
-    let contentNode = FeedContentView()
+    let contentNode: FeedContentView
+    public var onAction: ((FeedAction) -> Void)? { didSet { contentNode.onAction = onAction } }
     private(set) var representedID: FeedID?
     private(set) var generation: UInt = 0
     private var imageTasks: [Task<Void, Never>] = []
 
-    public override init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+    public override convenience init(style: UITableViewCell.CellStyle, reuseIdentifier: String?) {
+        self.init(style: style, reuseIdentifier: reuseIdentifier, contentNode: FeedContentView())
+    }
+    init(style: UITableViewCell.CellStyle, reuseIdentifier: String?, contentNode: FeedContentView) {
+        self.contentNode = contentNode
         super.init(style: style, reuseIdentifier: reuseIdentifier)
         selectionStyle = .none
         contentView.addSubview(contentNode)
@@ -42,6 +47,7 @@ public final class FeedCell: UITableViewCell {
         super.prepareForReuse()
         generation &+= 1
         representedID = nil
+        onAction = nil
         cancelImageTasks()
         contentNode.clear()
     }
