@@ -50,6 +50,9 @@
 		A90000000000000000000001 /* FeedContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* FeedContentView.swift */; };
 		A90000000000000000000002 /* FeedCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000012 /* FeedCell.swift */; };
 		A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000013 /* FeedCellReuseTests.swift */; };
+		AA0000000000000000000001 /* FeedPrefetchCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */; };
+		AA0000000000000000000002 /* FeedViewController.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000012 /* FeedViewController.swift */; };
+		AA0000000000000000000003 /* FeedPrefetchCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */; };
 		ABDC320D1BEAFB870012A159 /* YYTextTagExample.m in Sources */ = {isa = PBXBuildFile; fileRef = ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
@@ -280,6 +283,9 @@
 		A90000000000000000000011 /* FeedContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedContentView.swift; sourceTree = "<group>"; };
 		A90000000000000000000012 /* FeedCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCell.swift; sourceTree = "<group>"; };
 		A90000000000000000000013 /* FeedCellReuseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCellReuseTests.swift; sourceTree = "<group>"; };
+		AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPrefetchCoordinator.swift; sourceTree = "<group>"; };
+		AA0000000000000000000012 /* FeedViewController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedViewController.swift; sourceTree = "<group>"; };
+		AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedPrefetchCoordinatorTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
 		A80000000000000000000011 /* FeedRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepository.swift; sourceTree = "<group>"; };
@@ -666,6 +672,8 @@
 			children = (
 				A90000000000000000000011 /* FeedContentView.swift */,
 				A90000000000000000000012 /* FeedCell.swift */,
+				AA0000000000000000000011 /* FeedPrefetchCoordinator.swift */,
+				AA0000000000000000000012 /* FeedViewController.swift */,
 			);
 			path = UI;
 			sourceTree = "<group>";
@@ -744,6 +752,7 @@
 			isa = PBXGroup;
 			children = (
 				A90000000000000000000013 /* FeedCellReuseTests.swift */,
+				AA0000000000000000000013 /* FeedPrefetchCoordinatorTests.swift */,
 				A80000000000000000000012 /* FeedRepositoryTests.swift */,
 				A70000000000000000000011 /* SystemImagePipelineTests.swift */,
 				A10000000000000000000014 /* TargetSmokeTests.swift */,
@@ -1549,6 +1558,8 @@
 				A70000000000000000000005 /* SystemImagePipeline.swift in Sources */,
 				A90000000000000000000001 /* FeedContentView.swift in Sources */,
 				A90000000000000000000002 /* FeedCell.swift in Sources */,
+				AA0000000000000000000001 /* FeedPrefetchCoordinator.swift in Sources */,
+				AA0000000000000000000002 /* FeedViewController.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1565,6 +1576,7 @@
 				A60000000000000000000001 /* AsyncRenderLayerTests.swift in Sources */,
 				A70000000000000000000001 /* SystemImagePipelineTests.swift in Sources */,
 				A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */,
+				AA0000000000000000000003 /* FeedPrefetchCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
