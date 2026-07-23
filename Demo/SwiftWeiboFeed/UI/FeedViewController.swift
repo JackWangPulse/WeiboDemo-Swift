@@ -55,7 +55,7 @@ final class FeedViewController: UIViewController {
     }
 
     private func layoutEnvironment() -> FeedLayoutEnvironment {
-        FeedLayoutEnvironment(
+        FeedLayoutEnvironment.resolve(
             width: view.bounds.width,
             scale: view.window?.screen.scale ?? UIScreen.main.scale,
             contentSizeCategory: traitCollection.preferredContentSizeCategory,
@@ -210,6 +210,7 @@ extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
         reprepareExecutor.submit(index: index, record: record, priority: priority) { [weak self] index, generation, result in
             guard let self, case let .success(entry) = result,
                   self.timelineStore.install(entry, at: index, generation: generation) else { return }
+                self.tableView.performBatchUpdates(nil)
                 if let cell = self.tableView.cellForRow(at: IndexPath(row: index, section: 0)) as? FeedCell {
                     cell.apply(entry, pipeline: self.imagePipeline)
                 }
@@ -225,9 +226,55 @@ extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
         updatePrefetchWindow(direction: direction)
     }
 
-    private func handle(_ action: FeedAction) {
-        guard case let .url(url) = action else { return }
-        UIApplication.shared.open(url)
+    func handle(_ action: FeedAction) {
+        switch action {
+        case let .expand(itemID):
+            guard let index = timelineStore.expand(itemID: itemID) else { return }
+            cancelRepreparation(at: index)
+            reprepareRow(at: index, priority: .visible)
+        case let .url(url):
+            showActionDetail(title: "Link", detail: url.absoluteString)
+        case let .user(name):
+            showActionDetail(title: "Profile", detail: name)
+        case let .topic(topic):
+            showActionDetail(title: "Topic", detail: topic)
+        case let .tag(tag):
+            showActionDetail(title: "Tag", detail: tag)
+        case .repost:
+            showActionDetail(title: "Repost", detail: "Ready to repost")
+        case .comment:
+            showActionDetail(title: "Comment", detail: "Write a comment")
+        case .like:
+            showActionDetail(title: "Liked", detail: "Like applied locally")
+        }
+    }
+
+    private func showActionDetail(title: String, detail: String) {
+        let controller = FeedActionDetailViewController(title: title, detail: detail)
+        if let navigationController { navigationController.pushViewController(controller, animated: true) }
+        else { present(UINavigationController(rootViewController: controller), animated: true) }
+    }
+}
+
+private final class FeedActionDetailViewController: UIViewController {
+    private let detailText: String
+    init(title: String, detail: String) {
+        detailText = detail
+        super.init(nibName: nil, bundle: nil)
+        self.title = title
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        let label = UILabel()
+        label.text = detailText
+        label.textAlignment = .center
+        label.numberOfLines = 0
+        label.font = .preferredFont(forTextStyle: .body)
+        label.frame = view.bounds.insetBy(dx: 24, dy: 24)
+        label.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        view.addSubview(label)
     }
 }
 

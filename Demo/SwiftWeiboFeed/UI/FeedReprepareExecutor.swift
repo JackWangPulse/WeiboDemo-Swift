@@ -18,10 +18,11 @@ private actor FeedReprepareWorker {
             item: record.item,
             parsedBody: parsed,
             parsedRepost: parsedRepost,
-            environment: record.expectedLayoutIdentity.environment
+            environment: record.expectedLayoutIdentity.environment,
+            maximumBodyLines: record.maximumBodyLines
         )
         try Task.checkCancellation()
-        return PreparedFeedEntry(item: record.item, identity: record.identity, parsed: parsed, layout: layout)
+        return PreparedFeedEntry(item: record.item, identity: record.identity, parsed: parsed, parsedRepost: parsedRepost, layout: layout)
     }
 }
 

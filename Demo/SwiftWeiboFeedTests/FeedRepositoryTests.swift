@@ -75,7 +75,7 @@ final class FeedRepositoryTests: XCTestCase {
             let body = parser.parse(item.text)
             let repost = item.repost.map { parser.parse($0.text) }
             let layout = try await engine.layout(identity: identity, item: item, parsedBody: body, parsedRepost: repost, environment: environment)
-            return (body, layout)
+            return (body, repost, layout)
         }
         let oldPage = try decodePage(idsAndTexts: [("1", "old")])
         let newPage = try decodePage(idsAndTexts: [("1", "new")])

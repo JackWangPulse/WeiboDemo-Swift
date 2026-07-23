@@ -22,7 +22,8 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         item: FeedItem,
         parsedBody: ParsedFeedText,
         parsedRepost: ParsedFeedText?,
-        environment: FeedLayoutEnvironment
+        environment: FeedLayoutEnvironment,
+        maximumBodyLines: Int? = 6
     ) async throws -> FeedItemLayout {
         try await FeedSignpost.measureAsync(.layout) {
             try Task.checkCancellation()
@@ -32,7 +33,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                 guard !cancellation.isCancelled else { return }
                 layoutStartHook?()
                 do {
-                    let result = try Self.compute(item: item, identity: identity, parsedBody: parsedBody, parsedRepost: parsedRepost, environment: environment, cancellation: cancellation)
+                    let result = try Self.compute(item: item, identity: identity, parsedBody: parsedBody, parsedRepost: parsedRepost, environment: environment, maximumBodyLines: maximumBodyLines, cancellation: cancellation)
                     completion.resume(.success(result))
                 } catch { completion.resume(.failure(error)) }
             }
@@ -55,6 +56,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         parsedBody: ParsedFeedText,
         parsedRepost: ParsedFeedText?,
         environment: FeedLayoutEnvironment,
+        maximumBodyLines: Int?,
         cancellation: LayoutCancellation
     ) throws -> FeedItemLayout {
         precondition(!Thread.isMainThread, "Feed layout must never run on the main thread")
@@ -65,9 +67,9 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let contentWidth = max(0, width - inset * 2)
         let bodyX: CGFloat = 64
         let bodyWidth = max(0, width - bodyX - inset)
-        let profile = try makeProfileLayout(item: item, width: width, cancellation: cancellation)
+        let profile = try makeProfileLayout(item: item, width: width, environment: environment, cancellation: cancellation)
         var cursor: CGFloat = profile.frame.maxY + 12
-        let body = try makeTextLayout(parsedBody, x: bodyX, y: cursor, width: bodyWidth, itemID: item.id, cancellation: cancellation)
+        let body = try makeTextLayout(parsedBody, x: bodyX, y: cursor, width: bodyWidth, itemID: item.id, environment: environment, maximumLines: maximumBodyLines, cancellation: cancellation)
         cursor = body.bounds.maxY + 12
 
         try checkCancellation(cancellation)
@@ -77,12 +79,12 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         var repostLayout: RepostLayout?
         if let repost = item.repost, let parsedRepost {
             let repostTop = cursor
-            let repostBody = try makeTextLayout(parsedRepost, x: 24, y: repostTop + 12, width: max(0, width - 48), itemID: repost.id, cancellation: cancellation)
+            let repostBody = try makeTextLayout(parsedRepost, x: 24, y: repostTop + 12, width: max(0, width - 48), itemID: repost.id, environment: environment, maximumLines: 6, cancellation: cancellation)
             var repostBottom = repostBody.bounds.maxY + 12
             let repostMedia = mediaFrames(count: repost.pictures.count, x: 24, y: repostBottom, availableWidth: max(0, width - 48))
             if let last = repostMedia.last { repostBottom = last.maxY + 12 }
             let repostCard = try repost.card.map {
-                try makeCardLayout($0, x: 24, y: repostBottom, width: max(0, width - 48), cancellation: cancellation)
+                try makeCardLayout($0, x: 24, y: repostBottom, width: max(0, width - 48), environment: environment, cancellation: cancellation)
             }
             if let repostCard { repostBottom = repostCard.frame.maxY + 12 }
             let frame = CGRect(x: inset, y: repostTop, width: contentWidth, height: repostBottom - repostTop)
@@ -90,10 +92,10 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             cursor = frame.maxY + 12
         }
 
-        let card = try item.card.map { try makeCardLayout($0, x: inset, y: cursor, width: contentWidth, cancellation: cancellation) }
+        let card = try item.card.map { try makeCardLayout($0, x: inset, y: cursor, width: contentWidth, environment: environment, cancellation: cancellation) }
         if let card { cursor = card.frame.maxY + 12 }
         // Match the original YYKit Weibo demo, which intentionally renders only the first tag.
-        let tag = try item.tags.first.map { try makeTagLayout($0, x: inset, y: cursor, width: contentWidth, cancellation: cancellation) }
+        let tag = try item.tags.first.map { try makeTagLayout($0, x: inset, y: cursor, width: contentWidth, environment: environment, cancellation: cancellation) }
         if let tag { cursor = tag.frame.maxY + 12 }
         try checkCancellation(cancellation)
         let toolbarFrame = CGRect(x: 0, y: cursor, width: width, height: 44)
@@ -112,7 +114,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             return ToolbarItemLayout(
                 action: value.0,
                 iconFrame: CGRect(x: sectionX + sectionWidth / 2 - 26, y: cursor + 14, width: 16, height: 16),
-                count: makeSingleLineText(String(counts[index]), x: sectionX + sectionWidth / 2 - 4, y: cursor + 12, width: 34, color: .secondaryLabel, fontSize: 13)
+                count: makeSingleLineText(String(counts[index]), x: sectionX + sectionWidth / 2 - 4, y: cursor + 12, width: 34, color: environment.palette.secondaryText, fontSize: 13)
             )
         }
         let height = toolbarFrame.maxY + 8
@@ -130,16 +132,16 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         )
     }
 
-    private static func makeProfileLayout(item: FeedItem, width: CGFloat, cancellation: LayoutCancellation) throws -> ProfileLayout {
+    private static func makeProfileLayout(item: FeedItem, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> ProfileLayout {
         try checkCancellation(cancellation)
         let frame = CGRect(x: 0, y: 0, width: width, height: 64)
         let avatar = CGRect(x: 12, y: 12, width: 40, height: 40)
         let verificationFrame = item.user.isVerified ? CGRect(x: 48, y: 40, width: 12, height: 12) : nil
-        let name = makeSingleLineText(item.user.name, x: 64, y: 12, width: max(0, width - 76), color: .label)
+        let name = makeSingleLineText(item.user.name, x: 64, y: 12, width: max(0, width - 76), color: environment.palette.primaryText, fontSize: CGFloat(environment.bodyFontSize))
         let timeText = item.createdAt.map(Self.formatProfileDate)
-        let time = timeText.map { makeSingleLineText($0, x: 64, y: 34, width: 92, color: .secondaryLabel, fontSize: 12) }
+        let time = timeText.map { makeSingleLineText($0, x: 64, y: 34, width: 92, color: environment.palette.secondaryText, fontSize: 12) }
         let sourceX = time == nil ? 64 : 160
-        let source = item.source.map { makeSingleLineText($0, x: CGFloat(sourceX), y: 34, width: max(0, width - CGFloat(sourceX) - 12), color: .secondaryLabel, fontSize: 12) }
+        let source = item.source.map { makeSingleLineText($0, x: CGFloat(sourceX), y: 34, width: max(0, width - CGFloat(sourceX) - 12), color: environment.palette.secondaryText, fontSize: 12) }
         let verificationDescription = item.user.verifiedReason.map { ", verified, \($0)" } ?? (item.user.isVerified ? ", verified" : "")
         let metadataDescription = [timeText, item.source].compactMap { $0 }.joined(separator: ", ")
         let accessibilityLabel = item.user.name + verificationDescription + (metadataDescription.isEmpty ? "" : ", " + metadataDescription)
@@ -162,31 +164,32 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         return formatter.string(from: date)
     }
 
-    private static func makeCardLayout(_ card: FeedCard, x: CGFloat, y: CGFloat, width: CGFloat, cancellation: LayoutCancellation) throws -> CardLayout {
+    private static func makeCardLayout(_ card: FeedCard, x: CGFloat, y: CGFloat, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> CardLayout {
         try checkCancellation(cancellation)
         let frame = CGRect(x: x, y: y, width: width, height: 64)
         let imageFrame = card.imageURL == nil ? nil : CGRect(x: x, y: y, width: 64, height: 64)
         let textX = imageFrame?.maxX.advanced(by: 8) ?? x + 8
         let title = card.title ?? card.description ?? "Link"
-        let text = makeSingleLineText(title, x: textX, y: y + 22, width: max(0, frame.maxX - textX - 8), color: .label)
+        let text = makeSingleLineText(title, x: textX, y: y + 22, width: max(0, frame.maxX - textX - 8), color: environment.palette.primaryText)
         let regions = card.targetURL.map { [InteractionRegion(rects: [frame], action: .url($0), accessibilityLabel: title)] } ?? []
         return CardLayout(frame: frame, imageFrame: imageFrame, text: text, regions: regions)
     }
 
-    private static func makeTagLayout(_ tag: FeedTag, x: CGFloat, y: CGFloat, width: CGFloat, cancellation: LayoutCancellation) throws -> TagLayout {
+    private static func makeTagLayout(_ tag: FeedTag, x: CGFloat, y: CGFloat, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> TagLayout {
         try checkCancellation(cancellation)
         let frame = CGRect(x: x, y: y, width: width, height: 28)
-        let text = makeSingleLineText(tag.name, x: x + 8, y: y + 4, width: max(0, width - 16), color: .systemBlue)
+        let text = makeSingleLineText(tag.name, x: x + 8, y: y + 4, width: max(0, width - 16), color: environment.palette.accent)
         return TagLayout(frame: frame, text: text, regions: [InteractionRegion(rects: [frame], action: .tag(tag.name), accessibilityLabel: tag.name)])
     }
 
-    private static func makeSingleLineText(_ value: String, x: CGFloat, y: CGFloat, width: CGFloat, color: UIColor, fontSize: CGFloat = 16) -> TextLayout {
+    private static func makeSingleLineText(_ value: String, x: CGFloat, y: CGFloat, width: CGFloat, color: FeedRGBA, fontSize: CGFloat = 16) -> TextLayout {
         guard width > 0 else {
             return TextLayout(storage: CoreTextLayoutStorage(lines: [], origins: []), bounds: CGRect(x: x, y: y, width: 0, height: 0), regions: [])
         }
-        let attributed = NSAttributedString(string: value, attributes: [.font: UIFont.systemFont(ofSize: fontSize), .foregroundColor: color])
+        let attributes: [NSAttributedString.Key: Any] = [.init(kCTFontAttributeName as String): CTFontCreateWithName(".AppleSystemUIFont" as CFString, fontSize, nil), .init(kCTForegroundColorAttributeName as String): color.cgColor]
+        let attributed = NSAttributedString(string: value, attributes: attributes)
         let original = CTLineCreateWithAttributedString(attributed)
-        let token = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: [.font: UIFont.systemFont(ofSize: fontSize), .foregroundColor: color]))
+        let token = CTLineCreateWithAttributedString(NSAttributedString(string: "…", attributes: attributes))
         let originalWidth = CGFloat(CTLineGetTypographicBounds(original, nil, nil, nil))
         let tokenWidth = CGFloat(CTLineGetTypographicBounds(token, nil, nil, nil))
         let line: CTLine
@@ -206,20 +209,31 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         y: CGFloat,
         width: CGFloat,
         itemID: FeedID,
+        environment: FeedLayoutEnvironment,
+        maximumLines: Int?,
         cancellation: LayoutCancellation
     ) throws -> TextLayout {
         try checkCancellation(cancellation)
         let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = 20
-        paragraph.maximumLineHeight = 20
+        let lineHeight = CGFloat(environment.bodyLineHeight)
+        let fontSize = CGFloat(environment.bodyFontSize)
+        let ascent = min(lineHeight - 2, fontSize)
+        paragraph.minimumLineHeight = lineHeight
+        paragraph.maximumLineHeight = lineHeight
         paragraph.lineSpacing = 0
         let text = NSMutableAttributedString(
             string: parsed.source,
-            attributes: [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor.label, .paragraphStyle: paragraph]
+            attributes: [.init(kCTFontAttributeName as String): CTFontCreateWithName(".AppleSystemUIFont" as CFString, fontSize, nil), .init(kCTForegroundColorAttributeName as String): environment.palette.primaryText.cgColor, .paragraphStyle: paragraph]
         )
+        var resolvedEmoticons: [(NSRange, CGImage)] = []
         for span in parsed.spans where span.kind != .plain {
             let range = NSRange(span.range, in: parsed.source)
-            text.addAttribute(.foregroundColor, value: UIColor.systemBlue, range: range)
+            if span.kind == .emoticon, let name = span.emoticonName, let image = FeedEmoticonResolver.image(named: name) {
+                resolvedEmoticons.append((range, image))
+                text.addAttribute(.init(kCTForegroundColorAttributeName as String), value: CGColor(gray: 0, alpha: 0), range: range)
+            } else {
+                text.addAttribute(.init(kCTForegroundColorAttributeName as String), value: environment.palette.accent.cgColor, range: range)
+            }
         }
         try checkCancellation(cancellation)
         let typesetter = CTTypesetterCreateWithAttributedString(text)
@@ -229,13 +243,13 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         var indexBases = [Int]()
         var index = 0
         let length = text.length
-        let maximumLines = 6
-        while index < length && lines.count < maximumLines {
+        let lineLimit = maximumLines ?? Int.max
+        while index < length && lines.count < lineLimit {
             try checkCancellation(cancellation)
             let count = max(1, CTTypesetterSuggestLineBreak(typesetter, index, Double(width)))
             let range = CFRange(location: index, length: min(count, length - index))
             lines.append(CTTypesetterCreateLine(typesetter, range))
-            origins.append(CGPoint(x: x, y: y + CGFloat(lines.count - 1) * 20 + 16))
+            origins.append(CGPoint(x: x, y: y + CGFloat(lines.count - 1) * lineHeight + ascent))
             ranges.append(range)
             indexBases.append(0)
             index += range.length
@@ -246,7 +260,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         if truncated, let finalRange = ranges.last, let origin = origins.last {
             let token = NSAttributedString(
                 string: "… More",
-                attributes: [.font: UIFont.systemFont(ofSize: 16), .foregroundColor: UIColor.systemBlue]
+                attributes: [.init(kCTFontAttributeName as String): CTFontCreateWithName(".AppleSystemUIFont" as CFString, fontSize, nil), .init(kCTForegroundColorAttributeName as String): environment.palette.accent.cgColor]
             )
             let tokenLine = CTLineCreateWithAttributedString(token)
             let tokenWidth = CGFloat(CTLineGetTypographicBounds(tokenLine, nil, nil, nil))
@@ -268,15 +282,15 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             indexBases[indexBases.count - 1] = finalRange.location
             let prefixLine = CTLineCreateWithAttributedString(text.attributedSubstring(from: NSRange(location: finalRange.location, length: visibleUTF16End - finalRange.location)))
             let tokenOffset = CGFloat(CTLineGetTypographicBounds(prefixLine, nil, nil, nil))
-            expandRect = CGRect(x: x + tokenOffset, y: origin.y - 16, width: tokenWidth, height: 20)
+            expandRect = CGRect(x: x + tokenOffset, y: origin.y - ascent, width: tokenWidth, height: lineHeight)
         }
-        let bounds = CGRect(x: x, y: y, width: width, height: CGFloat(lines.count) * 20)
+        let bounds = CGRect(x: x, y: y, width: width, height: CGFloat(lines.count) * lineHeight)
         var regions = parsed.spans.compactMap { span -> InteractionRegion? in
             guard let action = span.action else { return nil }
             let semanticRange = NSRange(span.range, in: parsed.source)
             let clipped = NSIntersectionRange(semanticRange, NSRange(location: 0, length: visibleUTF16End))
             guard clipped.length > 0 else { return nil }
-            let rects = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins, indexBases: indexBases)
+            let rects = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins, indexBases: indexBases, ascent: ascent, lineHeight: lineHeight)
             guard !rects.isEmpty else { return nil }
             return InteractionRegion(rects: rects, action: action, accessibilityLabel: String(parsed.source[span.range]))
         }
@@ -287,7 +301,14 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                 accessibilityLabel: "Expand"
             ))
         }
-        return TextLayout(storage: CoreTextLayoutStorage(lines: lines, origins: origins), bounds: bounds, regions: regions)
+        let attachments = resolvedEmoticons.compactMap { range, image -> TextAttachment? in
+            let clipped = NSIntersectionRange(range, NSRange(location: 0, length: visibleUTF16End))
+            guard clipped.length == range.length,
+                  let rect = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins, indexBases: indexBases, ascent: ascent, lineHeight: lineHeight).first else { return nil }
+            let side = min(lineHeight, max(1, rect.height))
+            return TextAttachment(image: image, frame: CGRect(x: rect.minX, y: rect.minY, width: side, height: side))
+        }
+        return TextLayout(storage: CoreTextLayoutStorage(lines: lines, origins: origins), bounds: bounds, regions: regions, attachments: attachments)
     }
 
     private static func interactionRects(
@@ -295,7 +316,9 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         lineRanges: [CFRange],
         lines: [CTLine],
         origins: [CGPoint],
-        indexBases: [Int]
+        indexBases: [Int],
+        ascent: CGFloat,
+        lineHeight: CGFloat
     ) -> [CGRect] {
         lineRanges.indices.compactMap { lineIndex in
             let lineRange = NSRange(location: lineRanges[lineIndex].location, length: lineRanges[lineIndex].length)
@@ -306,7 +329,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let indexBase = indexBases[lineIndex]
             let start = CGFloat(CTLineGetOffsetForStringIndex(line, intersection.location - indexBase, nil))
             let end = CGFloat(CTLineGetOffsetForStringIndex(line, NSMaxRange(intersection) - indexBase, nil))
-            return CGRect(x: origin.x + min(start, end), y: origin.y - 16, width: max(abs(end - start), 1), height: 20)
+            return CGRect(x: origin.x + min(start, end), y: origin.y - ascent, width: max(abs(end - start), 1), height: lineHeight)
         }
     }
 

@@ -68,12 +68,14 @@ public struct PreparedFeedEntry: Sendable {
     public let item: FeedItem
     public let identity: FeedContentIdentity
     public let parsed: ParsedFeedText
+    public let parsedRepost: ParsedFeedText?
     public let layout: FeedItemLayout
 
-    public init(item: FeedItem, identity: FeedContentIdentity, parsed: ParsedFeedText, layout: FeedItemLayout) {
+    public init(item: FeedItem, identity: FeedContentIdentity, parsed: ParsedFeedText, parsedRepost: ParsedFeedText? = nil, layout: FeedItemLayout) {
         self.item = item
         self.identity = identity
         self.parsed = parsed
+        self.parsedRepost = parsedRepost
         self.layout = layout
     }
 }
@@ -83,10 +85,18 @@ public actor FeedRepository {
         _ item: FeedItem,
         _ identity: FeedContentIdentity,
         _ environment: FeedLayoutEnvironment
-    ) async throws -> (ParsedFeedText, FeedItemLayout)
+    ) async throws -> (ParsedFeedText, ParsedFeedText?, FeedItemLayout)
+
+    private struct RetainedEntry: Sendable {
+        let item: FeedItem
+        let identity: FeedContentIdentity
+        let parsed: ParsedFeedText
+        let parsedRepost: ParsedFeedText?
+    }
 
     private struct State: Sendable {
-        var entries: [PreparedFeedEntry] = []
+        var retained: [RetainedEntry] = []
+        var prepared: [PreparedFeedEntry] = []
         var environment: FeedLayoutEnvironment?
         var publication: FeedPublicationToken?
     }
@@ -118,7 +128,7 @@ public actor FeedRepository {
                     parsedRepost: parsedRepost,
                     environment: environment
                 )
-                return (parsedBody, layout)
+                return (parsedBody, parsedRepost, layout)
             }
         }
     }
@@ -128,16 +138,17 @@ public actor FeedRepository {
         let requestGeneration = generation
         let oldState = state
         let newItems = Self.deduplicated(page.items)
-        let changes = Self.changes(from: oldState.entries.map(\.item), to: newItems)
-        let oldEntries = Dictionary(uniqueKeysWithValues: oldState.entries.map { ($0.item.id, $0) })
+        let changes = Self.changes(from: oldState.retained.map(\.item), to: newItems)
+        let oldEntries = Dictionary(uniqueKeysWithValues: oldState.retained.map { ($0.item.id, $0) })
+        let oldPrepared = Dictionary(uniqueKeysWithValues: oldState.prepared.map { ($0.item.id, $0) })
         let environmentChanged = oldState.environment != environment
 
         let plans = newItems.map { item -> PreparationPlan in
             if let old = oldEntries[item.id], !Self.layoutContentChanged(old.item, item) {
-                if !environmentChanged {
-                    return .reuse(PreparedFeedEntry(item: item, identity: old.identity, parsed: old.parsed, layout: old.layout))
+                if !environmentChanged, let prepared = oldPrepared[item.id] {
+                    return .reuse(PreparedFeedEntry(item: item, identity: old.identity, parsed: old.parsed, parsedRepost: old.parsedRepost, layout: prepared.layout))
                 }
-                return .prepare(item, old.identity)
+                return .relayout(item, old.identity, old.parsed, old.parsedRepost)
             }
             let nextVersion = oldEntries[item.id].map { $0.identity.contentVersion &+ 1 } ?? 0
             return .prepare(item, FeedContentIdentity(itemID: item.id, contentVersion: nextVersion))
@@ -163,13 +174,19 @@ public actor FeedRepository {
                     while position < indexesToPrepare.count {
                         try Task.checkCancellation()
                         let index = indexesToPrepare[position]
-                        guard case let .prepare(item, identity) = plans[index] else {
-                            position += workerCount
-                            continue
+                        let item: FeedItem, identity: FeedContentIdentity, parsed: ParsedFeedText, parsedRepost: ParsedFeedText?, layout: FeedItemLayout
+                        switch plans[index] {
+                        case let .prepare(nextItem, nextIdentity):
+                            item = nextItem; identity = nextIdentity
+                            (parsed, parsedRepost, layout) = try await preparation(item, identity, environment)
+                        case let .relayout(nextItem, nextIdentity, retainedParsed, retainedRepost):
+                            item = nextItem; identity = nextIdentity; parsed = retainedParsed; parsedRepost = retainedRepost
+                            layout = try await FeedLayoutEngine().layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: parsedRepost, environment: environment)
+                        case .reuse:
+                            position += workerCount; continue
                         }
-                        let (parsed, layout) = try await preparation(item, identity, environment)
                         try Task.checkCancellation()
-                        batch.append((index, PreparedFeedEntry(item: item, identity: identity, parsed: parsed, layout: layout)))
+                        batch.append((index, PreparedFeedEntry(item: item, identity: identity, parsed: parsed, parsedRepost: parsedRepost, layout: layout)))
                         position += workerCount
                     }
                     return batch
@@ -186,24 +203,27 @@ public actor FeedRepository {
         try Task.checkCancellation()
         guard requestGeneration == generation else { throw CancellationError() }
         let token = FeedPublicationToken(generation: requestGeneration, environment: environment)
-        state = State(entries: complete, environment: environment, publication: token)
+        let retained = complete.map { RetainedEntry(item: $0.item, identity: $0.identity, parsed: $0.parsed, parsedRepost: $0.parsedRepost) }
+        state = State(retained: retained, prepared: complete, environment: environment, publication: token)
         return FeedPublication(changes: changes, token: token)
     }
 
-    public func snapshot() -> [PreparedFeedEntry] { state.entries }
+    public func snapshot() -> [PreparedFeedEntry] { state.prepared }
 
     /// Atomically transfers heavyweight prepared ownership. No later request can
     /// be cleared by a stale snapshot/release pair because there is no second step.
     public func transferPreparedEntries(matching token: FeedPublicationToken, environment: FeedLayoutEnvironment) -> [PreparedFeedEntry]? {
         guard token.environment == environment, state.publication == token, state.environment == environment else { return nil }
-        let entries = state.entries
-        state = State()
+        let entries = state.prepared
+        state.prepared = []
+        state.publication = nil
         return entries
     }
 
     private enum PreparationPlan: Sendable {
         case reuse(PreparedFeedEntry)
         case prepare(FeedItem, FeedContentIdentity)
+        case relayout(FeedItem, FeedContentIdentity, ParsedFeedText, ParsedFeedText?)
     }
 
     private static func deduplicated(_ items: [FeedItem]) -> [FeedItem] {

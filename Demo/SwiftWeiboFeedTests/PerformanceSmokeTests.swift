@@ -259,6 +259,27 @@ final class PerformanceSmokeTests: XCTestCase {
         XCTAssertEqual(currentTransfer?.map(\.item.id.rawValue), ["new"])
     }
 
+    func testTransferRetainsAuthoritativeStateAndEnvironmentRelayoutDoesNotReparse() async throws {
+        let parseCounter = AtomicCounter()
+        let repository = FeedRepository(parsingStartHook: { _ in parseCounter.add(1) })
+        let firstEnvironment = FeedLayoutEnvironment(width: 320, scale: 2, contentSizeCategory: .large, themeVersion: 0, algorithmVersion: 1)
+        let secondEnvironment = FeedLayoutEnvironment(width: 414, scale: 2, contentSizeCategory: .accessibilityLarge, themeVersion: 1, algorithmVersion: 1)
+        let firstPage = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["a", "b", "c"]))
+        let firstPublication = try await repository.apply(page: firstPage, environment: firstEnvironment)
+        let transferred = await repository.transferPreparedEntries(matching: firstPublication.token, environment: firstEnvironment)
+        XCTAssertEqual(transferred?.map(\.identity.contentVersion), [0, 0, 0])
+        let relayoutPublication = try await repository.apply(page: firstPage, environment: secondEnvironment)
+        XCTAssertTrue(relayoutPublication.changes.isEmpty)
+        XCTAssertEqual(parseCounter.value, 3, "environment-only refresh must reuse retained parsed semantics")
+        let relayout = await repository.snapshot()
+        XCTAssertEqual(relayout.map(\.identity.contentVersion), [0, 0, 0])
+        XCTAssertTrue(relayout.allSatisfy { $0.layout.identity.environment == secondEnvironment })
+
+        let laterPage = try JSONDecoder.weibo.decode(FeedPage.self, from: JSONEncoderForSmoke.page(ids: ["c", "a"]))
+        let later = try await repository.apply(page: laterPage, environment: secondEnvironment)
+        XCTAssertEqual(later.changes, [.deleted(FeedID(rawValue: "b"), 1), .moved(FeedID(rawValue: "c"), 2, 0), .moved(FeedID(rawValue: "a"), 0, 1)])
+    }
+
     func testFiveHundredMixedItemsPrepareOffMainWithExactCachedHeights() async throws {
         let base = try JSONDecoder.weibo.decode(FeedItem.self, from: Data(#"{"id":"base","user":{"id":"u","name":"User"},"text":"@user #topic# https://example.com","pics":[]}"#.utf8))
         let data = try JSONEncoderForSmoke.makePage(from: base, count: 500)

@@ -22,14 +22,21 @@ public final class CoreTextLayoutStorage: @unchecked Sendable {
     }
 }
 
+public struct TextAttachment: @unchecked Sendable {
+    public let image: CGImage
+    public let frame: CGRect
+}
+
 public struct TextLayout: Sendable {
     public let storage: CoreTextLayoutStorage
     public let bounds: CGRect
     public let regions: [InteractionRegion]
+    public let attachments: [TextAttachment]
 
-    public init(storage: CoreTextLayoutStorage, bounds: CGRect, regions: [InteractionRegion]) {
+    public init(storage: CoreTextLayoutStorage, bounds: CGRect, regions: [InteractionRegion], attachments: [TextAttachment] = []) {
         self.storage = storage
         self.bounds = bounds
         self.regions = regions
+        self.attachments = attachments
     }
 }

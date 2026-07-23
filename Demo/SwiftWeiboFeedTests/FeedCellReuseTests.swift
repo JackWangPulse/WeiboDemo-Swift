@@ -175,7 +175,7 @@ final class FeedCellReuseTests: XCTestCase {
         let parsed = FeedTextParser().parse(item.text); let repostParsed = item.repost.map { FeedTextParser().parse($0.text) }
         let environment = FeedLayoutEnvironment(width: 320, scale: 2, contentSizeCategory: .large, themeVersion: 1, algorithmVersion: 1)
         let layout = try await FeedLayoutEngine().layout(identity: identity, item: item, parsedBody: parsed, parsedRepost: repostParsed, environment: environment)
-        return PreparedFeedEntry(item: item, identity: identity, parsed: parsed, layout: layout)
+        return PreparedFeedEntry(item: item, identity: identity, parsed: parsed, parsedRepost: repostParsed, layout: layout)
     }
 
     private func drainMainActor() async { await withCheckedContinuation { continuation in DispatchQueue.main.async { continuation.resume() } } }

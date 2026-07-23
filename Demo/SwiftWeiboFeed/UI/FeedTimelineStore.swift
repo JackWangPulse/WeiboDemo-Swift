@@ -8,10 +8,11 @@ import Foundation
 final class FeedTimelineStore {
     struct Record: Sendable {
         let item: FeedItem
-        let identity: FeedContentIdentity
-        let expectedLayoutIdentity: FeedLayoutIdentity
+        var identity: FeedContentIdentity
+        var expectedLayoutIdentity: FeedLayoutIdentity
         let generation: UInt64
-        let exactHeight: CGFloat
+        var exactHeight: CGFloat
+        var maximumBodyLines: Int? = 6
         var prepared: PreparedFeedEntry?
     }
 
@@ -34,9 +35,27 @@ final class FeedTimelineStore {
               records[index].generation == expectedGeneration,
               records[index].identity == entry.identity,
               records[index].expectedLayoutIdentity == entry.layout.identity,
-              abs(records[index].exactHeight - entry.layout.height) < 0.5 else { return false }
+              (records[index].maximumBodyLines == nil || abs(records[index].exactHeight - entry.layout.height) < 0.5) else { return false }
+        records[index].exactHeight = entry.layout.height
         records[index].prepared = entry
         return true
+    }
+
+    func expand(itemID: FeedID) -> Int? {
+        guard let index = records.firstIndex(where: { $0.item.id == itemID }),
+              records[index].maximumBodyLines != nil else { return nil }
+        let nextIdentity = FeedContentIdentity(
+            itemID: records[index].identity.itemID,
+            contentVersion: records[index].identity.contentVersion &+ 1
+        )
+        records[index].identity = nextIdentity
+        records[index].expectedLayoutIdentity = FeedLayoutIdentity(
+            content: nextIdentity,
+            environment: records[index].expectedLayoutIdentity.environment
+        )
+        records[index].maximumBodyLines = nil
+        records[index].prepared = nil
+        return index
     }
 
     func evictDistantLayouts(retaining visible: Set<FeedLayoutIdentity>) {
