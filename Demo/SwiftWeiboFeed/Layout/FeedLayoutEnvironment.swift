@@ -22,7 +22,6 @@ public struct FeedLayoutEnvironment: Hashable, Sendable {
         layoutAlgorithmVersion = algorithmVersion
     }
 }
-
 public struct FeedLayoutIdentity: Hashable, Sendable {
     public let content: FeedContentIdentity
     public let environment: FeedLayoutEnvironment
@@ -32,4 +31,3 @@ public struct FeedLayoutIdentity: Hashable, Sendable {
         self.environment = environment
     }
 }
-

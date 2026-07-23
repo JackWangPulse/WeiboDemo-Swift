@@ -12,7 +12,6 @@ public struct InteractionRegion: Sendable {
         self.accessibilityLabel = accessibilityLabel
     }
 }
-
 public final class CoreTextLayoutStorage: @unchecked Sendable {
     public let lines: [CTLine]
     public let origins: [CGPoint]
@@ -34,4 +33,3 @@ public struct TextLayout: Sendable {
         self.regions = regions
     }
 }
-

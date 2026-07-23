@@ -40,4 +40,3 @@ This record is intentionally unfilled until it is run on a physical iPhone 11. S
 - JSON decoding, disk I/O absent from main thread: TBD
 - Time Profiler trace path: TBD
 - Variance from 60 fps / memory targets and explanation: TBD
-
