@@ -98,12 +98,14 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let tag = try item.tags.first.map { try makeTagLayout($0, x: inset, y: cursor, width: contentWidth, environment: environment, cancellation: cancellation) }
         if let tag { cursor = tag.frame.maxY + 12 }
         try checkCancellation(cancellation)
-        let toolbarFrame = CGRect(x: 0, y: cursor, width: width, height: 44)
+        let metricScale = max(1, CGFloat(environment.bodyLineHeight) / 20)
+        let toolbarHeight = max(44, 44 * metricScale)
+        let toolbarFrame = CGRect(x: 0, y: cursor, width: width, height: toolbarHeight)
         let sectionWidth = width / 3
         let actions: [(FeedAction, String)] = [(.repost, "Repost"), (.comment, "Comment"), (.like, "Like")]
         let toolbarRegions = actions.enumerated().map { index, value in
             InteractionRegion(
-                rects: [CGRect(x: CGFloat(index) * sectionWidth, y: cursor, width: sectionWidth, height: 44)],
+                rects: [CGRect(x: CGFloat(index) * sectionWidth, y: cursor, width: sectionWidth, height: toolbarHeight)],
                 action: value.0,
                 accessibilityLabel: value.1
             )
@@ -113,8 +115,8 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let sectionX = CGFloat(index) * sectionWidth
             return ToolbarItemLayout(
                 action: value.0,
-                iconFrame: CGRect(x: sectionX + sectionWidth / 2 - 26, y: cursor + 14, width: 16, height: 16),
-                count: makeSingleLineText(String(counts[index]), x: sectionX + sectionWidth / 2 - 4, y: cursor + 12, width: 34, color: environment.palette.secondaryText, fontSize: 13)
+                iconFrame: CGRect(x: sectionX + sectionWidth / 2 - 26, y: cursor + (toolbarHeight - 16) / 2, width: 16, height: 16),
+                count: makeSingleLineText(String(counts[index]), x: sectionX + sectionWidth / 2 - 4, y: cursor + (toolbarHeight - max(20, CGFloat(environment.bodyLineHeight))) / 2, width: 34, color: environment.palette.secondaryText, fontSize: max(13, CGFloat(environment.bodyFontSize) * 0.8))
             )
         }
         let height = toolbarFrame.maxY + 8
@@ -134,14 +136,21 @@ public final class FeedLayoutEngine: @unchecked Sendable {
 
     private static func makeProfileLayout(item: FeedItem, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> ProfileLayout {
         try checkCancellation(cancellation)
-        let frame = CGRect(x: 0, y: 0, width: width, height: 64)
-        let avatar = CGRect(x: 12, y: 12, width: 40, height: 40)
-        let verificationFrame = item.user.isVerified ? CGRect(x: 48, y: 40, width: 12, height: 12) : nil
-        let name = makeSingleLineText(item.user.name, x: 64, y: 12, width: max(0, width - 76), color: environment.palette.primaryText, fontSize: CGFloat(environment.bodyFontSize))
+        let lineHeight = CGFloat(environment.bodyLineHeight)
+        let avatarSide = max(40, lineHeight * 2)
+        let profileHeight = max(64, avatarSide + 24, lineHeight * 2 + 20)
+        let frame = CGRect(x: 0, y: 0, width: width, height: profileHeight)
+        let avatar = CGRect(x: 12, y: 12, width: avatarSide, height: avatarSide)
+        let textX = avatar.maxX + 12
+        let verificationFrame = item.user.isVerified ? CGRect(x: avatar.maxX - 8, y: avatar.maxY - 8, width: 12, height: 12) : nil
+        let name = makeSingleLineText(item.user.name, x: textX, y: 10, width: max(0, width - textX - 12), color: environment.palette.primaryText, fontSize: CGFloat(environment.bodyFontSize))
         let timeText = item.createdAt.map(Self.formatProfileDate)
-        let time = timeText.map { makeSingleLineText($0, x: 64, y: 34, width: 92, color: environment.palette.secondaryText, fontSize: 12) }
-        let sourceX = time == nil ? 64 : 160
-        let source = item.source.map { makeSingleLineText($0, x: CGFloat(sourceX), y: 34, width: max(0, width - CGFloat(sourceX) - 12), color: environment.palette.secondaryText, fontSize: 12) }
+        let metaY = 10 + lineHeight
+        let metaFont = max(12, CGFloat(environment.bodyFontSize) * 0.75)
+        let timeWidth = min(120 * max(1, lineHeight / 20), max(0, width - textX - 12))
+        let time = timeText.map { makeSingleLineText($0, x: textX, y: metaY, width: timeWidth, color: environment.palette.secondaryText, fontSize: metaFont) }
+        let sourceX = time == nil ? textX : textX + timeWidth + 4
+        let source = item.source.map { makeSingleLineText($0, x: sourceX, y: metaY, width: max(0, width - sourceX - 12), color: environment.palette.secondaryText, fontSize: metaFont) }
         let verificationDescription = item.user.verifiedReason.map { ", verified, \($0)" } ?? (item.user.isVerified ? ", verified" : "")
         let metadataDescription = [timeText, item.source].compactMap { $0 }.joined(separator: ", ")
         let accessibilityLabel = item.user.name + verificationDescription + (metadataDescription.isEmpty ? "" : ", " + metadataDescription)
@@ -166,19 +175,21 @@ public final class FeedLayoutEngine: @unchecked Sendable {
 
     private static func makeCardLayout(_ card: FeedCard, x: CGFloat, y: CGFloat, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> CardLayout {
         try checkCancellation(cancellation)
-        let frame = CGRect(x: x, y: y, width: width, height: 64)
-        let imageFrame = card.imageURL == nil ? nil : CGRect(x: x, y: y, width: 64, height: 64)
+        let height = max(64, CGFloat(environment.bodyLineHeight) + 32)
+        let frame = CGRect(x: x, y: y, width: width, height: height)
+        let imageFrame = card.imageURL == nil ? nil : CGRect(x: x, y: y, width: height, height: height)
         let textX = imageFrame?.maxX.advanced(by: 8) ?? x + 8
         let title = card.title ?? card.description ?? "Link"
-        let text = makeSingleLineText(title, x: textX, y: y + 22, width: max(0, frame.maxX - textX - 8), color: environment.palette.primaryText)
+        let text = makeSingleLineText(title, x: textX, y: y + (height - max(20, CGFloat(environment.bodyLineHeight))) / 2, width: max(0, frame.maxX - textX - 8), color: environment.palette.primaryText, fontSize: CGFloat(environment.bodyFontSize))
         let regions = card.targetURL.map { [InteractionRegion(rects: [frame], action: .url($0), accessibilityLabel: title)] } ?? []
         return CardLayout(frame: frame, imageFrame: imageFrame, text: text, regions: regions)
     }
 
     private static func makeTagLayout(_ tag: FeedTag, x: CGFloat, y: CGFloat, width: CGFloat, environment: FeedLayoutEnvironment, cancellation: LayoutCancellation) throws -> TagLayout {
         try checkCancellation(cancellation)
-        let frame = CGRect(x: x, y: y, width: width, height: 28)
-        let text = makeSingleLineText(tag.name, x: x + 8, y: y + 4, width: max(0, width - 16), color: environment.palette.accent)
+        let height = max(28, CGFloat(environment.bodyLineHeight) + 8)
+        let frame = CGRect(x: x, y: y, width: width, height: height)
+        let text = makeSingleLineText(tag.name, x: x + 8, y: y + 4, width: max(0, width - 16), color: environment.palette.accent, fontSize: CGFloat(environment.bodyFontSize))
         return TagLayout(frame: frame, text: text, regions: [InteractionRegion(rects: [frame], action: .tag(tag.name), accessibilityLabel: tag.name)])
     }
 
@@ -200,7 +211,8 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         } else {
             line = CTLineCreateWithAttributedString(NSAttributedString(string: ""))
         }
-        return TextLayout(storage: CoreTextLayoutStorage(lines: [line], origins: [CGPoint(x: x, y: y + 16)]), bounds: CGRect(x: x, y: y, width: width, height: 20), regions: [])
+        let lineHeight = max(20, fontSize * 1.25)
+        return TextLayout(storage: CoreTextLayoutStorage(lines: [line], origins: [CGPoint(x: x, y: y + fontSize)]), bounds: CGRect(x: x, y: y, width: width, height: lineHeight), regions: [])
     }
 
     private static func makeTextLayout(
@@ -225,15 +237,39 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             string: parsed.source,
             attributes: [.init(kCTFontAttributeName as String): CTFontCreateWithName(".AppleSystemUIFont" as CFString, fontSize, nil), .init(kCTForegroundColorAttributeName as String): environment.palette.primaryText.cgColor, .paragraphStyle: paragraph]
         )
-        var resolvedEmoticons: [(NSRange, CGImage)] = []
-        for span in parsed.spans where span.kind != .plain {
-            let range = NSRange(span.range, in: parsed.source)
-            if span.kind == .emoticon, let name = span.emoticonName, let image = FeedEmoticonResolver.image(named: name) {
-                resolvedEmoticons.append((range, image))
-                text.addAttribute(.init(kCTForegroundColorAttributeName as String), value: CGColor(gray: 0, alpha: 0), range: range)
-            } else {
-                text.addAttribute(.init(kCTForegroundColorAttributeName as String), value: environment.palette.accent.cgColor, range: range)
+        var replacements: [(original: NSRange, displayLocation: Int, image: CGImage)] = []
+        let emoticons = parsed.spans.compactMap { span -> (NSRange, CGImage)? in
+            guard span.kind == .emoticon, let name = span.emoticonName,
+                  let image = FeedEmoticonResolver.image(named: name) else { return nil }
+            return (NSRange(span.range, in: parsed.source), image)
+        }.sorted { $0.0.location < $1.0.location }
+        var removed = 0
+        for (range, image) in emoticons {
+            let location = range.location - removed
+            let metrics = RunDelegateMetrics(width: lineHeight, ascent: ascent, descent: max(0, lineHeight - ascent))
+            var callbacks = CTRunDelegateCallbacks(
+                version: kCTRunDelegateCurrentVersion,
+                dealloc: { Unmanaged<RunDelegateMetrics>.fromOpaque($0).release() },
+                getAscent: { Unmanaged<RunDelegateMetrics>.fromOpaque($0).takeUnretainedValue().ascent },
+                getDescent: { Unmanaged<RunDelegateMetrics>.fromOpaque($0).takeUnretainedValue().descent },
+                getWidth: { Unmanaged<RunDelegateMetrics>.fromOpaque($0).takeUnretainedValue().width }
+            )
+            let refCon = Unmanaged.passRetained(metrics).toOpaque()
+            guard let delegate = CTRunDelegateCreate(&callbacks, refCon) else {
+                Unmanaged<RunDelegateMetrics>.fromOpaque(refCon).release()
+                continue
             }
+            text.replaceCharacters(in: NSRange(location: location, length: range.length), with: "\u{FFFC}")
+            text.addAttributes([
+                .init(kCTRunDelegateAttributeName as String): delegate,
+                attachmentImageKey: AttachmentImageBox(image)
+            ], range: NSRange(location: location, length: 1))
+            replacements.append((range, location, image))
+            removed += range.length - 1
+        }
+        for span in parsed.spans where span.kind != .plain && span.kind != .emoticon {
+            let range = displayRange(for: NSRange(span.range, in: parsed.source), replacements: replacements)
+            text.addAttribute(.init(kCTForegroundColorAttributeName as String), value: environment.palette.accent.cgColor, range: range)
         }
         try checkCancellation(cancellation)
         let typesetter = CTTypesetterCreateWithAttributedString(text)
@@ -287,7 +323,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
         let bounds = CGRect(x: x, y: y, width: width, height: CGFloat(lines.count) * lineHeight)
         var regions = parsed.spans.compactMap { span -> InteractionRegion? in
             guard let action = span.action else { return nil }
-            let semanticRange = NSRange(span.range, in: parsed.source)
+            let semanticRange = displayRange(for: NSRange(span.range, in: parsed.source), replacements: replacements)
             let clipped = NSIntersectionRange(semanticRange, NSRange(location: 0, length: visibleUTF16End))
             guard clipped.length > 0 else { return nil }
             let rects = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins, indexBases: indexBases, ascent: ascent, lineHeight: lineHeight)
@@ -301,14 +337,31 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                 accessibilityLabel: "Expand"
             ))
         }
-        let attachments = resolvedEmoticons.compactMap { range, image -> TextAttachment? in
-            let clipped = NSIntersectionRange(range, NSRange(location: 0, length: visibleUTF16End))
-            guard clipped.length == range.length,
-                  let rect = interactionRects(for: clipped, lineRanges: ranges, lines: lines, origins: origins, indexBases: indexBases, ascent: ascent, lineHeight: lineHeight).first else { return nil }
-            let side = min(lineHeight, max(1, rect.height))
-            return TextAttachment(image: image, frame: CGRect(x: rect.minX, y: rect.minY, width: side, height: side))
+        var attachments = [TextAttachment]()
+        for lineIndex in lines.indices {
+            for runValue in CTLineGetGlyphRuns(lines[lineIndex]) as! [CTRun] {
+                let attributes = CTRunGetAttributes(runValue) as NSDictionary
+                guard let image = (attributes[attachmentImageKey] as? AttachmentImageBox)?.image else { continue }
+                let runRange = CTRunGetStringRange(runValue)
+                guard runRange.location < visibleUTF16End else { continue }
+                let offset = CGFloat(CTLineGetOffsetForStringIndex(lines[lineIndex], runRange.location, nil))
+                let width = CGFloat(CTRunGetTypographicBounds(runValue, CFRange(location: 0, length: 0), nil, nil, nil))
+                attachments.append(TextAttachment(
+                    image: image,
+                    frame: CGRect(x: origins[lineIndex].x + offset, y: origins[lineIndex].y - ascent, width: width, height: lineHeight)
+                ))
+            }
         }
         return TextLayout(storage: CoreTextLayoutStorage(lines: lines, origins: origins), bounds: bounds, regions: regions, attachments: attachments)
+    }
+
+    private static let attachmentImageKey = NSAttributedString.Key("FeedEmoticonImage")
+
+    private static func displayRange(for original: NSRange, replacements: [(original: NSRange, displayLocation: Int, image: CGImage)]) -> NSRange {
+        let before = replacements.filter { NSMaxRange($0.original) <= original.location }.reduce(0) { $0 + $1.original.length - 1 }
+        let inside = replacements.filter { $0.original.location >= original.location && NSMaxRange($0.original) <= NSMaxRange(original) }
+        let removedInside = inside.reduce(0) { $0 + $1.original.length - 1 }
+        return NSRange(location: original.location - before, length: original.length - removedInside)
     }
 
     private static func interactionRects(
@@ -362,6 +415,22 @@ private final class LayoutCancellation: @unchecked Sendable {
     private var cancelled = false
     var isCancelled: Bool { lock.withLock { cancelled } }
     func cancel() { lock.withLock { cancelled = true } }
+}
+
+private final class RunDelegateMetrics {
+    let width: CGFloat
+    let ascent: CGFloat
+    let descent: CGFloat
+    init(width: CGFloat, ascent: CGFloat, descent: CGFloat) {
+        self.width = width
+        self.ascent = ascent
+        self.descent = descent
+    }
+}
+
+private final class AttachmentImageBox {
+    let image: CGImage
+    init(_ image: CGImage) { self.image = image }
 }
 
 private final class LayoutCompletion<Value: Sendable>: @unchecked Sendable {

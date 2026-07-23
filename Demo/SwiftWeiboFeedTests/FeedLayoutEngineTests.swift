@@ -44,6 +44,37 @@ final class FeedLayoutEngineTests: XCTestCase {
         assertFinite(layout)
     }
 
+    func testEmoticonUsesOneExactWidthRunAndFallbackStaysLiteral() async throws {
+        let item = try makeItem(text: "A[微笑]B[不存在]")
+        let layout = try await FeedLayoutEngine().layout(
+            identity: contentIdentity(for: item), item: item,
+            parsedBody: FeedTextParser().parse(item.text), parsedRepost: nil, environment: environment()
+        )
+        let attachment = try XCTUnwrap(layout.body.attachments.first)
+        XCTAssertEqual(layout.body.attachments.count, 1)
+        XCTAssertEqual(attachment.frame.width, CGFloat(environment().bodyLineHeight), accuracy: 0.01)
+        XCTAssertEqual(layout.body.storage.lines.count, 1)
+        XCTAssertGreaterThan(CGFloat(CTLineGetTypographicBounds(layout.body.storage.lines[0], nil, nil, nil)), attachment.frame.width)
+    }
+
+    func testAccessibilityGeometryExpandsWithoutOverlapOrClipping() async throws {
+        let item = try makeRichItem()
+        let parsedRepost = FeedTextParser().parse(try XCTUnwrap(item.repost).text)
+        let normal = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: parsedRepost, environment: environment())
+        let accessible = try await FeedLayoutEngine().layout(identity: contentIdentity(for: item), item: item, parsedBody: FeedTextParser().parse(item.text), parsedRepost: parsedRepost, environment: environment(contentSizeCategory: .accessibilityLarge))
+        XCTAssertGreaterThan(accessible.profile.frame.height, normal.profile.frame.height)
+        XCTAssertGreaterThan(accessible.toolbar.frame.height, normal.toolbar.frame.height)
+        XCTAssertGreaterThan(accessible.height, normal.height)
+        XCTAssertTrue(accessible.profile.frame.contains(accessible.profile.avatarFrame))
+        XCTAssertTrue(accessible.profile.frame.contains(accessible.profile.name.bounds))
+        XCTAssertTrue(accessible.card.map { $0.frame.contains($0.text.bounds) } ?? false)
+        XCTAssertTrue(accessible.tag.map { $0.frame.contains($0.text.bounds) } ?? false)
+        let ordered = accessible.allFrames.sorted { $0.minY < $1.minY }
+        for pair in zip(ordered, ordered.dropFirst()) where pair.0.minY != pair.1.minY {
+            XCTAssertLessThanOrEqual(pair.0.minY, pair.1.minY)
+        }
+    }
+
     func testLongBodyTruncatesAndAddsExpandRegion() async throws {
         let item = try makeItem(text: String(repeating: "👨‍👩‍👧‍👦 中文长句会换行。", count: 30) + " https://hidden.example.com")
         let layout = try await FeedLayoutEngine().layout(

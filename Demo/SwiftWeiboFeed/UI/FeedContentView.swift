@@ -73,17 +73,17 @@ public final class FeedContentView: UIView {
             display(repostLayer, frame: repost.frame, identity: identity(entry, .repost, generation), scale: scale) { context, token in
                 Self.fill(context, size: repost.frame.size, color: palette.repostBackground)
                 Self.draw(repost.body, in: context, region: repost.frame, token: token)
-                if let card = repost.card { Self.strokeSeparator(context, globalY: card.frame.minY, region: repost.frame); Self.draw(card.text, in: context, region: repost.frame, token: token) }
+                if let card = repost.card { Self.strokeSeparator(context, globalY: card.frame.minY, region: repost.frame, color: palette.separator); Self.draw(card.text, in: context, region: repost.frame, token: token) }
             }
         }
-        if let card = layout.card { display(cardLayer, frame: card.frame, identity: identity(entry, .card, generation), scale: scale) { context, token in Self.fill(context, size: card.frame.size, color: palette.repostBackground); Self.strokeSeparator(context, globalY: card.frame.minY, region: card.frame); Self.draw(card.text, in: context, region: card.frame, token: token) } }
+        if let card = layout.card { display(cardLayer, frame: card.frame, identity: identity(entry, .card, generation), scale: scale) { context, token in Self.fill(context, size: card.frame.size, color: palette.repostBackground); Self.strokeSeparator(context, globalY: card.frame.minY, region: card.frame, color: palette.separator); Self.draw(card.text, in: context, region: card.frame, token: token) } }
         if let tag = layout.tag { display(tagLayer, frame: tag.frame, identity: identity(entry, .tag, generation), scale: scale) { context, token in Self.fill(context, size: tag.frame.size, color: palette.repostBackground); Self.draw(tag.text, in: context, region: tag.frame, token: token) } }
         display(toolbarLayer, frame: layout.toolbar.frame, identity: identity(entry, .toolbar, generation), scale: scale) { context, token in
             guard !token.isCancelled else { return }
-            Self.strokeSeparator(context, globalY: layout.toolbar.frame.minY, region: layout.toolbar.frame)
+            Self.strokeSeparator(context, globalY: layout.toolbar.frame.minY, region: layout.toolbar.frame, color: palette.separator)
             for item in layout.toolbar.items {
                 guard !token.isCancelled else { return }
-                Self.drawToolbarIcon(item.action, frame: item.iconFrame.offsetBy(dx: -layout.toolbar.frame.minX, dy: -layout.toolbar.frame.minY), context: context)
+                Self.drawToolbarIcon(item.action, frame: item.iconFrame.offsetBy(dx: -layout.toolbar.frame.minX, dy: -layout.toolbar.frame.minY), context: context, color: palette.icon)
                 Self.draw(item.count, in: context, region: layout.toolbar.frame, token: token)
             }
         }
@@ -161,9 +161,11 @@ public final class FeedContentView: UIView {
             let element = FeedAccessibilityElement(accessibilityContainer: self, action: action) { [weak self] action in self?.onAction?(action) }
             element.accessibilityLabel = label; element.accessibilityTraits = traits; element.accessibilityFrameInContainerSpace = frame; elements.append(element)
         }
-        let plainBody = entry.parsed.spans.filter { $0.kind == .plain }.map { String(entry.parsed.source[$0.range]) }.joined()
-        if !plainBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            append(label: plainBody, frame: entry.layout.body.bounds, traits: .staticText)
+        for span in entry.parsed.spans where span.kind == .plain {
+            let plainBody = String(entry.parsed.source[span.range])
+            if !plainBody.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                append(label: plainBody, frame: entry.layout.body.bounds, traits: .staticText)
+            }
         }
         if let repostLayout = entry.layout.repost, let parsedRepost = entry.parsedRepost {
             let plainRepost = parsedRepost.spans.filter { $0.kind == .plain }.map { String(parsedRepost.source[$0.range]) }.joined()
@@ -175,6 +177,12 @@ public final class FeedContentView: UIView {
         for (index, frame) in entry.layout.mediaFrames.enumerated() { append(label: "Media \(index + 1)", frame: frame, traits: .image) }
         if let repost = entry.layout.repost {
             for (index, frame) in repost.mediaFrames.enumerated() { append(label: "Repost media \(index + 1)", frame: frame, traits: .image) }
+        }
+        elements.sort {
+            if $0.accessibilityFrameInContainerSpace.minY != $1.accessibilityFrameInContainerSpace.minY {
+                return $0.accessibilityFrameInContainerSpace.minY < $1.accessibilityFrameInContainerSpace.minY
+            }
+            return $0.accessibilityFrameInContainerSpace.minX < $1.accessibilityFrameInContainerSpace.minX
         }
         accessibilityElements = elements
     }
@@ -195,8 +203,8 @@ public final class FeedContentView: UIView {
     }
     private static func fill(_ context: CGContext, size: CGSize, color: (CGFloat, CGFloat, CGFloat, CGFloat)) { context.setFillColor(red: color.0, green: color.1, blue: color.2, alpha: color.3); context.fill(CGRect(origin: .zero, size: size)) }
     private static func fill(_ context: CGContext, size: CGSize, color: FeedRGBA) { context.setFillColor(color.cgColor); context.fill(CGRect(origin: .zero, size: size)) }
-    private static func strokeSeparator(_ context: CGContext, globalY: CGFloat, region: CGRect) { context.setStrokeColor(red: 0.82, green: 0.82, blue: 0.84, alpha: 1); context.move(to: CGPoint(x: 0, y: region.height - (globalY - region.minY))); context.addLine(to: CGPoint(x: region.width, y: region.height - (globalY - region.minY))); context.strokePath() }
-    private static func drawToolbarIcon(_ action: FeedAction, frame: CGRect, context: CGContext) { context.setStrokeColor(red: 0.35, green: 0.35, blue: 0.38, alpha: 1); context.strokeEllipse(in: frame.insetBy(dx: 2, dy: 2)); if action == .like { context.move(to: CGPoint(x: frame.midX, y: frame.minY)); context.addLine(to: CGPoint(x: frame.midX, y: frame.maxY)); context.strokePath() } }
+    private static func strokeSeparator(_ context: CGContext, globalY: CGFloat, region: CGRect, color: FeedRGBA) { context.setStrokeColor(color.cgColor); context.move(to: CGPoint(x: 0, y: region.height - (globalY - region.minY))); context.addLine(to: CGPoint(x: region.width, y: region.height - (globalY - region.minY))); context.strokePath() }
+    private static func drawToolbarIcon(_ action: FeedAction, frame: CGRect, context: CGContext, color: FeedRGBA) { context.setStrokeColor(color.cgColor); context.strokeEllipse(in: frame.insetBy(dx: 2, dy: 2)); if action == .like { context.move(to: CGPoint(x: frame.midX, y: frame.minY)); context.addLine(to: CGPoint(x: frame.midX, y: frame.maxY)); context.strokePath() } }
     private static func regions(_ layout: FeedItemLayout) -> [InteractionRegion] {
         var result = layout.profile.regions + layout.body.regions
         if let repost = layout.repost { result += repost.body.regions + (repost.card?.regions ?? []) }

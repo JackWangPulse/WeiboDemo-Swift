@@ -167,6 +167,7 @@ final class FeedViewController: UIViewController {
                 }
             },
             clearDecodedImages: { [imagePipeline] in
+                FeedEmoticonResolver.clearDecodedCache()
                 if let pipeline = imagePipeline as? SystemImagePipeline { await pipeline.clearDecodedCache() }
             },
             discardDistantLayouts: { [weak self, layoutCache] retained in
