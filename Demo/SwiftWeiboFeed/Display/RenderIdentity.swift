@@ -2,7 +2,11 @@ import Foundation
 
 public enum RenderRegion: Hashable, Sendable {
     case headerBody
+    case profile
+    case body
     case repost
+    case card
+    case tag
     case cardTag
     case toolbar
 }

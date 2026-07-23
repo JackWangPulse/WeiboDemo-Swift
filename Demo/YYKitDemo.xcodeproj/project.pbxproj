@@ -47,6 +47,9 @@
 		A70000000000000000000003 /* ImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000013 /* ImagePipeline.swift */; };
 		A70000000000000000000004 /* DecodedImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000014 /* DecodedImageCache.swift */; };
 		A70000000000000000000005 /* SystemImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000015 /* SystemImagePipeline.swift */; };
+		A90000000000000000000001 /* FeedContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* FeedContentView.swift */; };
+		A90000000000000000000002 /* FeedCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000012 /* FeedCell.swift */; };
+		A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000013 /* FeedCellReuseTests.swift */; };
 		ABDC320D1BEAFB870012A159 /* YYTextTagExample.m in Sources */ = {isa = PBXBuildFile; fileRef = ABDC320C1BEAFB870012A159 /* YYTextTagExample.m */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
@@ -274,6 +277,9 @@
 		A70000000000000000000013 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
 		A70000000000000000000014 /* DecodedImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodedImageCache.swift; sourceTree = "<group>"; };
 		A70000000000000000000015 /* SystemImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemImagePipeline.swift; sourceTree = "<group>"; };
+		A90000000000000000000011 /* FeedContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedContentView.swift; sourceTree = "<group>"; };
+		A90000000000000000000012 /* FeedCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCell.swift; sourceTree = "<group>"; };
+		A90000000000000000000013 /* FeedCellReuseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCellReuseTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
 		A80000000000000000000011 /* FeedRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepository.swift; sourceTree = "<group>"; };
@@ -643,6 +649,7 @@
 		A10000000000000000000022 /* SwiftWeiboFeed */ = {
 			isa = PBXGroup;
 			children = (
+				A90000000000000000000027 /* UI */,
 				A70000000000000000000027 /* Images */,
 				A10000000000000000000023 /* App */,
 				A20000000000000000000027 /* Domain */,
@@ -652,6 +659,15 @@
 				A10000000000000000000024 /* Resources */,
 			);
 			path = SwiftWeiboFeed;
+			sourceTree = "<group>";
+		};
+		A90000000000000000000027 /* UI */ = {
+			isa = PBXGroup;
+			children = (
+				A90000000000000000000011 /* FeedContentView.swift */,
+				A90000000000000000000012 /* FeedCell.swift */,
+			);
+			path = UI;
 			sourceTree = "<group>";
 		};
 		A30000000000000000000027 /* Parsing */ = {
@@ -727,6 +743,7 @@
 		A10000000000000000000025 /* SwiftWeiboFeedTests */ = {
 			isa = PBXGroup;
 			children = (
+				A90000000000000000000013 /* FeedCellReuseTests.swift */,
 				A80000000000000000000012 /* FeedRepositoryTests.swift */,
 				A70000000000000000000011 /* SystemImagePipelineTests.swift */,
 				A10000000000000000000014 /* TargetSmokeTests.swift */,
@@ -1530,6 +1547,8 @@
 				A70000000000000000000003 /* ImagePipeline.swift in Sources */,
 				A70000000000000000000004 /* DecodedImageCache.swift in Sources */,
 				A70000000000000000000005 /* SystemImagePipeline.swift in Sources */,
+				A90000000000000000000001 /* FeedContentView.swift in Sources */,
+				A90000000000000000000002 /* FeedCell.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1545,6 +1564,7 @@
 				A40000000000000000000001 /* FeedLayoutEngineTests.swift in Sources */,
 				A60000000000000000000001 /* AsyncRenderLayerTests.swift in Sources */,
 				A70000000000000000000001 /* SystemImagePipelineTests.swift in Sources */,
+				A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
