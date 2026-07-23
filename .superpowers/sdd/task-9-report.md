@@ -27,3 +27,13 @@ Verification:
 - Added injected render-layer/content-node seams for deterministic cell-level A/B draw-race verification.
 - Expanded tests for all-region bitmap pixels, exact image pixel requests and scale, card/repost bindings, old layer removal, deterministic cancellation, touch and VoiceOver routing, frames, traits, toolbar counts, and stale draw identity.
 - Fresh Xcode 27 beta `build-for-testing`: `TEST BUILD SUCCEEDED`; project plist lint and diff checks passed. Simulator execution remained unavailable (the runner stopped after build without test events), so no new runtime-pass claim is made.
+
+## Final review cycle
+
+- Applying, replacing, clearing, or reusing content now cancels the selected interaction and hides the shared highlight before identity changes.
+- Toolbar top separators use the same UIKit-global to layer-local Quartz conversion as other geometry.
+- Image regression coverage now rejects mismatched response requests and verifies populated avatar/media/card/repost layers are cleared before removal.
+- Transparent-bitmap text probes cover profile, repost, card, and tag glyph placement independently of backgrounds.
+- Repost body text now has one static virtual accessibility element at its prepared frame.
+- Added regressions for stale touch completion across replacement/reuse, new-item interaction, toolbar edge pixels, response mismatch, teardown contents, isolated semantic text, and repost accessibility.
+- Final Xcode 27 beta `build-for-testing`: `TEST BUILD SUCCEEDED`.

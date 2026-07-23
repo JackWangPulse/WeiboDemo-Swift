@@ -68,6 +68,15 @@ final class FeedCellReuseTests: XCTestCase {
         XCTAssertTrue(toolbarElement.accessibilityTraits.contains(.button))
     }
 
+    func testReplacementAndReuseCancelPendingInteraction() async throws {
+        let a = try await makeEntry(id: "A", text: "#same#", pictures: 0), b = try await makeEntry(id: "B", text: "#same#", pictures: 0)
+        let view = FeedContentView(); var actions: [FeedAction] = []; view.onAction = { actions.append($0) }
+        view.apply(a); let point = a.layout.body.regions[0].rects[0].center; view.beginInteraction(at: point)
+        view.apply(b); view.endInteraction(at: point); XCTAssertTrue(actions.isEmpty)
+        view.beginInteraction(at: point); view.endInteraction(at: point); XCTAssertEqual(actions, [b.layout.body.regions[0].action])
+        view.beginInteraction(at: point); view.clear(); view.endInteraction(at: point); XCTAssertEqual(actions.count, 1)
+    }
+
     func testImageRequestsUseExactPixelsAndContentsScale() async throws {
         let entry = try await makeEntry(id: "A", text: "body", pictures: 1)
         let pipeline = ControllableCellImagePipeline(); let cell = FeedCell(style: .default, reuseIdentifier: nil)
@@ -76,6 +85,14 @@ final class FeedCellReuseTests: XCTestCase {
         XCTAssertEqual(sizes, [PixelSize(width: 80, height: 80), PixelSize(width: 296, height: 296)])
         await pipeline.complete(urlContaining: "A", color: 0x33); await Task.yield()
         XCTAssertTrue(cell.contentNode.imageLayers.allSatisfy { $0.contentsScale == 2 })
+    }
+
+    func testMismatchedImageResponseRequestIsRejected() async throws {
+        let entry = try await makeEntry(id: "A", text: "body", pictures: 0); let pipeline = ControllableCellImagePipeline(); let cell = FeedCell(style: .default, reuseIdentifier: nil)
+        cell.apply(entry, pipeline: pipeline); await pipeline.waitForRequests(1)
+        await pipeline.completeMismatched(urlContaining: "A")
+        await drainMainActor()
+        XCTAssertNil(cell.contentNode.imageLayers[0].contents)
     }
 
     func testEverySemanticBitmapContainsDrawnPixelsWithinItsBounds() async throws {
@@ -91,6 +108,7 @@ final class FeedCellReuseTests: XCTestCase {
             let image = try XCTUnwrap(commits[region], "missing \(region)")
             XCTAssertTrue(image.hasPixelVariation, "\(region) must draw visible pixels inside its bitmap")
         }
+        XCTAssertTrue(try XCTUnwrap(commits[.toolbar]).lastBitmapRowHasInk, "toolbar separator must occupy the UIKit top edge")
     }
 
     func testCellReplacementCancelsBlockedADrawsBeforeBCommits() async throws {
@@ -115,10 +133,29 @@ final class FeedCellReuseTests: XCTestCase {
         let bindings = view.imageBindings(for: complex, scale: 2)
         XCTAssertEqual(bindings.map(\.1), [complex.layout.mediaFrames[0], complex.layout.repost!.mediaFrames[0], complex.layout.repost!.card!.imageFrame!, complex.layout.card!.imageFrame!])
         let oldLayers = view.imageLayers
+        let marker = makeMarkerImage(0x77); oldLayers.forEach { $0.contents = marker }
         view.apply(simple)
         XCTAssertTrue(oldLayers.allSatisfy { $0.superlayer == nil && $0.contents == nil })
         XCTAssertEqual(view.imageLayers.count, 1)
         XCTAssertTrue(view.mediaLayers.isEmpty)
+    }
+
+
+    func testRepostBodyHasStaticAccessibilityElementAtPreparedFrame() async throws {
+        let entry = try await makeComplexEntry(); let view = FeedContentView(); view.apply(entry)
+        let element = try XCTUnwrap((view.accessibilityElements as? [UIAccessibilityElement])?.first { $0.accessibilityLabel == "repost text" })
+        XCTAssertEqual(element.accessibilityFrameInContainerSpace, entry.layout.repost?.body.bounds)
+        XCTAssertTrue(element.accessibilityTraits.contains(.staticText))
+    }
+
+    func testNonBodySemanticTextDrawsIntoTransparentLocalBitmaps() async throws {
+        let entry = try await makeComplexEntry(); let token = DisplayCancellationToken()
+        let cases: [(TextLayout, CGRect)] = [(entry.layout.profile.name, entry.layout.profile.frame), (entry.layout.repost!.body, entry.layout.repost!.frame), (entry.layout.card!.text, entry.layout.card!.frame), (entry.layout.tag!.text, entry.layout.tag!.frame)]
+        for (text, region) in cases {
+            let bitmap = try XCTUnwrap(makeCellBitmap(width: Int(region.width * 2), height: Int(region.height * 2), opaque: false)); bitmap.context.scaleBy(x: 2, y: 2)
+            FeedContentView.draw(text, in: bitmap.context, region: region, token: token)
+            XCTAssertTrue(try XCTUnwrap(bitmap.makeImage()).hasNonzeroAlpha, "text clipped for region \(region)")
+        }
     }
 
     private func makeEntry(id: String, text: String, pictures: Int) async throws -> PreparedFeedEntry {
@@ -164,6 +201,13 @@ private actor ControllableCellImagePipeline: ImagePipeline {
         pending.removeAll { $0.request.url.absoluteString.contains(value) }
         for match in matches { match.continuation.resume(returning: ImageResponse(request: match.request, image: makeImage(color))) }
     }
+    func completeMismatched(urlContaining value: String) {
+        let matches = pending.filter { $0.request.url.absoluteString.contains(value) }; pending.removeAll { $0.request.url.absoluteString.contains(value) }
+        for match in matches {
+            let wrong = ImageRequest(url: URL(string: "https://example.com/wrong.png")!, targetPixelSize: match.request.targetPixelSize, contentMode: match.request.contentMode, processorVersion: match.request.processorVersion)
+            match.continuation.resume(returning: ImageResponse(request: wrong, image: makeImage(0x44)))
+        }
+    }
     private func makeImage(_ byte: UInt8) -> CGImage {
         let data = Data([byte, 0, 0, 255])
         let provider = CGDataProvider(data: data as CFData)!
@@ -185,6 +229,15 @@ private extension CGImage {
         let first = bytes[0]
         return (1..<CFDataGetLength(data)).contains { bytes[$0] != first }
     }
+    var hasNonzeroAlpha: Bool {
+        guard let data = dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
+        return stride(from: 3, to: CFDataGetLength(data), by: 4).contains { bytes[$0] != 0 }
+    }
+    var lastBitmapRowHasInk: Bool {
+        guard let data = dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
+        let start = max(0, CFDataGetLength(data) - bytesPerRow)
+        return (start..<CFDataGetLength(data)).contains { bytes[$0] != 0 }
+    }
 }
 
 private final class CellDisplayExecutor: DisplayExecutor, @unchecked Sendable {
@@ -200,4 +253,9 @@ private func makeCellBitmap(width: Int, height: Int, opaque: Bool) -> BitmapCont
     let alpha: CGImageAlphaInfo = opaque ? .noneSkipFirst : .premultipliedFirst
     guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: alpha.rawValue) else { return nil }
     return BitmapContext(context: context, makeImage: { context.makeImage() })
+}
+
+private func makeMarkerImage(_ byte: UInt8) -> CGImage {
+    let data = Data([byte, 0, 0, 255]); let provider = CGDataProvider(data: data as CFData)!
+    return CGImage(width: 1, height: 1, bitsPerComponent: 8, bitsPerPixel: 32, bytesPerRow: 4, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.premultipliedLast.rawValue), provider: provider, decode: nil, shouldInterpolate: false, intent: .defaultIntent)!
 }

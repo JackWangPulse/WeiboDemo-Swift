@@ -40,6 +40,7 @@ public final class FeedContentView: UIView {
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     public func apply(_ entry: PreparedFeedEntry) {
+        cancelInteraction()
         self.entry = entry
         let layout = entry.layout
         frame.size.height = layout.height
@@ -75,8 +76,7 @@ public final class FeedContentView: UIView {
         if let tag = layout.tag { display(tagLayer, frame: tag.frame, identity: identity(entry, .tag, generation), scale: scale) { context, token in Self.fill(context, size: tag.frame.size, color: (0.94, 0.97, 1, 1)); Self.draw(tag.text, in: context, region: tag.frame, token: token) } }
         display(toolbarLayer, frame: layout.toolbar.frame, identity: identity(entry, .toolbar, generation), scale: scale) { context, token in
             guard !token.isCancelled else { return }
-            context.setStrokeColor(red: 0.82, green: 0.82, blue: 0.84, alpha: 1)
-            context.move(to: .zero); context.addLine(to: CGPoint(x: layout.toolbar.frame.width, y: 0)); context.strokePath()
+            Self.strokeSeparator(context, globalY: layout.toolbar.frame.minY, region: layout.toolbar.frame)
             for item in layout.toolbar.items {
                 guard !token.isCancelled else { return }
                 Self.drawToolbarIcon(item.action, frame: item.iconFrame.offsetBy(dx: -layout.toolbar.frame.minX, dy: -layout.toolbar.frame.minY), context: context)
@@ -101,6 +101,7 @@ public final class FeedContentView: UIView {
     }
 
     func clear() {
+        cancelInteraction()
         entry = nil; interactionRegions = []; accessibilityElements = nil
         cancelRendering()
         for node in [profileLayer, bodyLayer, repostLayer, cardLayer, tagLayer, toolbarLayer] { node.frame = .zero }
@@ -138,7 +139,7 @@ public final class FeedContentView: UIView {
     private func region(at point: CGPoint) -> InteractionRegion? { interactionRegions.first { $0.rects.contains { $0.contains(point) } } }
 
     private func rebuildImageLayers(_ entry: PreparedFeedEntry) {
-        imageLayers.forEach { $0.removeFromSuperlayer() }
+        imageLayers.forEach { $0.contents = nil; $0.removeFromSuperlayer() }
         var frames = [entry.layout.profile.avatarFrame] + entry.layout.mediaFrames
         if let repost = entry.layout.repost { frames += repost.mediaFrames; if let image = repost.card?.imageFrame { frames.append(image) } }
         if let image = entry.layout.card?.imageFrame { frames.append(image) }
@@ -157,6 +158,9 @@ public final class FeedContentView: UIView {
             element.accessibilityLabel = label; element.accessibilityTraits = traits; element.accessibilityFrameInContainerSpace = frame; elements.append(element)
         }
         append(label: entry.parsed.source, frame: entry.layout.body.bounds, traits: .staticText)
+        if let repost = entry.item.repost, let repostLayout = entry.layout.repost {
+            append(label: repost.text, frame: repostLayout.body.bounds, traits: .staticText)
+        }
         for region in interactionRegions { append(label: region.accessibilityLabel, frame: region.rects.reduce(.null) { $0.union($1) }, action: region.action) }
         for (index, frame) in entry.layout.mediaFrames.enumerated() { append(label: "Media \(index + 1)", frame: frame, traits: .image) }
         if let repost = entry.layout.repost {
@@ -170,7 +174,7 @@ public final class FeedContentView: UIView {
         guard !frame.isEmpty else { node.cancelDisplay(); node.contents = nil; return }
         node.display(AsyncDisplayTask(identity: identity, size: frame.size, scale: scale, draw: draw))
     }
-    private static func draw(_ text: TextLayout, in context: CGContext, region: CGRect, token: DisplayCancellationToken) {
+    static func draw(_ text: TextLayout, in context: CGContext, region: CGRect, token: DisplayCancellationToken) {
         context.saveGState(); context.textMatrix = .identity
         for (line, origin) in zip(text.storage.lines, text.storage.origins) { guard !token.isCancelled else { break }; context.textPosition = CGPoint(x: origin.x - region.minX, y: region.height - (origin.y - region.minY)); CTLineDraw(line, context) }
         context.restoreGState()
