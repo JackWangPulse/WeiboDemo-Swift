@@ -251,59 +251,43 @@ RepostContent
 
 `FeedItem` 不保存解析后的文本、Cell 高度、区域 frame、绘制位图、图片任务或缓存对象。这些都是可由业务数据和显示环境重新生成的派生状态。
 
-## 5. 从原始正文推导富文本模型
+## 5. 从正文需求推导富文本模型
 
-本章不从现有 `FeedTextParser` 的代码反推答案，而是从产品行为逐步设计富文本 Struct、解析规则、布局边界、缓存身份和测试约束。
-
-原始输入只有一段字符串：
+服务端只返回原始正文：
 
 ```text
 你好 @小明，看看 #旅行# https://example.com [微笑]
 ```
 
-产品要求：
+客户端需要识别普通文字、@、话题、URL 和表情，并支持显示、点击、降级和后续排版。
 
-- 普通文字使用正文样式；
-- @、话题和 URL 使用可交互样式；
-- 点击后产生对应业务意图；
-- `[表情名]` 在本地资源存在时显示为图片；
-- 资源不存在或语法无效时仍要保留可读正文；
-- 宽度和字体变化后重新排版；
-- 语义解析不能依赖具体 View。
+### 5.1 语义解析与显示样式分离
 
-### 5.1 第一次候选：Parser 直接返回 NSAttributedString
+候选 A：Parser 直接返回最终 `NSAttributedString`。
 
-最简单的方案是让 Parser 直接生成最终 `NSAttributedString`：
+问题是 Parser 将同时依赖字体、颜色、主题和表情图片。主题或字体变化时，客户端还要重新识别一次相同的 @、话题和 URL。
+
+候选 B：Parser 先生成与 UIKit 无关的语义片段，再由 Presentation/Layout 构建样式和排版。
+
+选择 B：
 
 ```text
-String
-→ Parser
-→ NSAttributedString
-→ UILabel
+FeedItem.text
+→ ParsedFeedText
+→ 富文本样式
+→ TextLayout
+→ View
 ```
 
-这个方案适合只有普通文字和少量链接的小页面，但当前需求下存在耦合：
+### 5.2 TextSpan 字段推导
 
-- Parser 必须知道字体和颜色；
-- Parser 必须知道深浅色主题；
-- Parser 必须加载表情图片；
-- 主题或字体变化时需要重新识别语义；
-- 点击目标难以与最终导航解耦；
-- 更换 UILabel、TextKit 或 CoreText 时可能重写 Parser。
+以 `@小明` 为例，后续处理至少需要知道：
 
-因此选择增加一个与 UIKit 样式无关的中间语义模型。
+- 它在原文中的范围；
+- 它属于哪种语义；
+- 点击后产生什么业务意图。
 
-### 5.2 从 @用户推导 TextSpan 字段
-
-以 `@小明` 为例，显示和点击至少需要知道：
-
-```text
-1. 它位于原文中的哪个范围；
-2. 它属于哪种语义；
-3. 点击后产生什么业务意图。
-```
-
-得到第一版草案：
+因此设计：
 
 ```swift
 struct TextSpan: Sendable {
@@ -320,28 +304,7 @@ enum TextSpanKind: Sendable {
     case link
     case emoticon
 }
-```
 
-Span 不直接执行导航。它只描述点击意图，最终由 Cell 将 Action 交给 Controller 或 Router。
-
-### 5.3 Action 保存闭包还是纯数据
-
-候选 A：Span 保存点击闭包。
-
-```swift
-let onTap: () -> Void
-```
-
-问题：
-
-- 闭包可能捕获 ViewController 并形成生命周期问题；
-- 解析结果无法安全缓存和跨线程传递；
-- 缓存可能长期保存已经失效的页面对象；
-- Parser 难以独立测试和跨页面复用。
-
-候选 B：Span 保存纯数据枚举。
-
-```swift
 enum TextAction: Hashable, Sendable {
     case user(String)
     case topic(String)
@@ -349,20 +312,13 @@ enum TextAction: Hashable, Sendable {
 }
 ```
 
-选择 B。事件流为：
+Action 保存纯数据枚举，不保存点击闭包，也不直接执行导航。Controller 或 Router 最终处理 Action。
 
-```text
-TextSpan.action
-→ ContentView 命中点击区域
-→ FeedCell 转发
-→ ViewController / Router 执行业务导航
-```
+`TextAction` 与整条动态的 `FeedAction` 分开，避免 Parser 在类型层面知道点赞、评论和转发。
 
-### 5.4 为什么 ParsedFeedText 必须保存 source
+### 5.3 ParsedFeedText 草案与不变量
 
-`Range<String.Index>` 只能与产生它的原字符串配套使用。单独保存“第几个字符到第几个字符”无法恢复语义，也容易在 Emoji 和组合字符处出错。
-
-因此原文和所有 Span 组成一个整体：
+Range 必须与产生它的原字符串配套，因此解析结果同时保存 source 和 spans：
 
 ```swift
 struct ParsedFeedText: Sendable {
@@ -371,92 +327,27 @@ struct ParsedFeedText: Sendable {
 }
 ```
 
-消费者通过：
+Span 不重复保存片段文字，消费者通过：
 
 ```swift
-let value = String(parsed.source[span.range])
+String(parsed.source[span.range])
 ```
 
-恢复片段文字。Span 不重复保存 `text`，避免 `text` 与 `range` 不一致。
+取得内容。
 
-保存 `source` 还有三个作用：
-
-- 构建完整富文本；
-- 富文本处理失败时降级为原始正文；
-- 为无障碍描述提供完整文本。
-
-进入 `NSAttributedString/CoreText` 边界时，再针对同一份 source 转换：
-
-```swift
-let nsRange = NSRange(span.range, in: parsed.source)
-```
-
-### 5.5 特殊 Span 还是完整覆盖
-
-候选 A：`spans` 只保存 @、话题、URL 和表情。
-
-候选 B：普通文字也生成 `.plain` Span，使所有 Span 完整覆盖 source。
-
-选择 B。解析结果需要满足：
+普通文字也生成 `.plain` Span，使 spans 完整覆盖 source。结果必须满足：
 
 ```text
-所有 Span 按原文顺序排列；
-Span 之间不能重叠；
-Span 之间不能留空；
-所有 Span 拼接后必须等于 source。
+spans 按原文顺序排列；
+spans 互不重叠；
+spans 之间没有空隙；
+所有 spans 拼接后等于 source；
+kind、action 和 emoticonName 组合合法。
 ```
 
-这样显示、无障碍和其他消费者不需要分别计算特殊片段之间的普通文字缺口。
-
-### 5.6 kind、action 和 emoticonName 的组合
-
-候选 A：简单 `kind` 加 Optional 字段。
-
-```swift
-struct TextSpan {
-    let range: Range<String.Index>
-    let kind: TextSpanKind
-    let action: TextAction?
-    let emoticonName: String?
-}
-```
-
-候选 B：带关联值的枚举，由编译器禁止非法组合。
-
-```swift
-enum TextSpanContent {
-    case plain
-    case mention(name: String)
-    case topic(name: String)
-    case link(URL)
-    case emoticon(name: String)
-}
-```
-
-本设计选择 A，原因是下游经常需要统一按 `kind` 过滤和遍历，点击系统也可以统一消费 Optional Action。
-
-代价是类型允许非法组合，因此必须规定：
+从第一版开始采用受控构造，不开放任意 spans：
 
 ```text
-plain：
-action == nil，emoticonName == nil
-
-mention：
-action == .user(...)，emoticonName == nil
-
-topic：
-action == .topic(...)，emoticonName == nil
-
-link：
-action == .url(...)，emoticonName == nil
-
-emoticon：
-action == nil，emoticonName != nil
-```
-
-不向任意调用者暴露完全自由的初始化方式，而是提供受控构造：
-
-```swift
 TextSpan.plain(...)
 TextSpan.mention(...)
 TextSpan.topic(...)
@@ -464,235 +355,43 @@ TextSpan.link(...)
 TextSpan.emoticon(...)
 ```
 
-### 5.7 ParsedFeedText 从一开始采用受控验证
+`ParsedFeedText` 创建时验证完整覆盖和字段组合。Debug 下用断言暴露 Parser Bug；Release 下验证失败则降级为一个覆盖完整正文的 `.plain` Span。
 
-当前讨论选择：不先开放任意 `[TextSpan]`，而是从第一版就验证结果不变量。
+### 5.4 表情、样式与布局边界
 
-```swift
-struct ParsedFeedText: Sendable {
-    let source: String
-    let spans: [TextSpan]
-
-    private init(
-        source: String,
-        validatedSpans: [TextSpan]
-    ) {
-        self.source = source
-        self.spans = validatedSpans
-    }
-}
-```
-
-受控工厂必须验证：
-
-1. 非空 source 至少有一个 Span；
-2. 第一个 Span 从 `source.startIndex` 开始；
-3. spans 已按 range 起点排序；
-4. 前一个 `upperBound` 等于后一个 `lowerBound`；
-5. 最后一个 Span 到 `source.endIndex`；
-6. 每个 Range 均与 source 配套；
-7. kind、action 与 emoticonName 组合合法。
-
-空字符串对应：
-
-```text
-source == ""
-spans == []
-```
-
-失败策略：
-
-```text
-Debug：
-断言暴露 Parser 实现错误
-
-Release：
-降级为一个覆盖完整 source 的 plain Span
-```
-
-服务端的奇怪正文不能导致页面崩溃；结构验证失败通常意味着客户端 Parser Bug。
-
-### 5.8 TextAction 与 FeedAction 的边界
-
-候选 A：富文本定义独立 `TextAction`。
-
-候选 B：整条动态统一使用包含 `.like`、`.comment` 等行为的 `FeedAction`。
-
-从零设计选择 A：
-
-- Parser 不知道点赞、评论和转发；
-- 富文本模块可以复用到其他页面；
-- 类型上不能给 TextSpan 塞入 `.like`；
-- 由 ContentView 或适配层将 TextAction 转换为 FeedAction。
-
-```swift
-extension FeedAction {
-    init(_ action: TextAction) {
-        switch action {
-        case let .user(value): self = .user(value)
-        case let .topic(value): self = .topic(value)
-        case let .url(url): self = .url(url)
-        }
-    }
-}
-```
-
-### 5.9 TextSpan 不保存图片、颜色或 CGRect
-
-Span 只回答“这段是什么”，不保存：
-
-- `UIImage/CGImage`；
-- 字体、颜色和行高；
-- 点击 `CGRect`；
-- UIView 或 CALayer；
-- 导航闭包。
-
-职责拆分：
+`TextSpan` 不保存 `UIImage/CGImage`、字体、颜色或 CGRect。
 
 ```text
 TextSpan
-→ 语义
+→ 表达“这里是名为微笑的表情”
 
-EmoticonResourceResolver
-→ 表情名称对应哪张本地图片
+EmoticonResolver
+→ 查找本地图片
 
 TextStyle
-→ 当前字体、颜色和行高
+→ 提供字体、颜色和行高
 
 TextLayout
-→ 当前宽度下的行、附件和点击矩形
+→ 计算行、附件位置和点击矩形
 ```
 
-### 5.10 表情资源的处理与降级
+表情资源存在时，将 `[微笑]` 替换为附件占位；资源不存在时保留原始文字。
 
-`TextSpan` 只保存：
-
-```text
-kind = emoticon
-emoticonName = "微笑"
-```
-
-资源解析顺序：
-
-```text
-查找本地表情资源
-├── 找到
-│   → 将 [微笑] 替换为附件占位
-│   → 根据行高设置 width/ascent/descent
-│
-└── 未找到
-    → 不替换
-    → 保留原始文字 [微笑]
-```
-
-不能先无条件替换为空白，再查找资源。单个表情资源缺失不能导致正文缺字或整段失败。
-
-### 5.11 样式由 TextStyle 与环境提供
-
-Span 不保存显示样式。布局阶段根据 `TextSpanKind + TextStyle` 构建富文本。
+一个 Span 可能跨越多行，因此点击区域只能在排版后产生：
 
 ```swift
-struct TextStyle: Hashable, Sendable {
-    let fontSize: Double
-    let lineHeight: Double
-    let primaryColor: FeedRGBA
-    let accentColor: FeedRGBA
-}
-```
-
-`maximumLines` 属于本次排版约束，而不是文字视觉样式，应作为 `TextLayoutBuilder` 的独立输入。
-
-规则示例：
-
-```text
-plain     → primaryColor
-mention   → accentColor
-topic     → accentColor
-link      → accentColor
-emoticon  → 根据 lineHeight 计算附件尺寸
-```
-
-主题或字体变化时：
-
-```text
-ParsedFeedText → 复用
-TextStyle      → 变化
-TextLayout     → 重建
-```
-
-### 5.12 点击 CGRect 必须在布局后产生
-
-一个语义 Span 可能跨越多行，因此不能在 `TextSpan` 中提前保存一个 CGRect。
-
-```swift
-struct InteractionRegion: Sendable {
+struct InteractionRegion {
     let rects: [CGRect]
     let action: TextAction
     let accessibilityLabel: String
 }
 ```
 
-使用 `[CGRect]` 是因为同一个 @用户或 URL 可能跨行，对应多个点击矩形。
+V1 可以使用 `NSAttributedString + UILabel`。当测量证明主线程排版是瓶颈后，再升级为保存行、坐标、附件和点击区域的 `TextLayout`，让 View 不再重复排版。
 
-### 5.13 V1 与优化版的富文本结果不同
+### 5.5 Parser 规则与重叠处理
 
-V1 先选择简单结果：
-
-```swift
-struct RichTextPresentation {
-    let attributedText: NSAttributedString
-}
-```
-
-流程：
-
-```text
-FeedItem.text
-→ ParsedFeedText
-→ RichTextPresentation
-→ UILabel 完成排版和绘制
-```
-
-当 Instruments 证明 UILabel/CoreText 排版仍是主线程瓶颈后，再升级：
-
-```swift
-struct TextLayout {
-    let lines: [TextLine]
-    let origins: [CGPoint]
-    let bounds: CGRect
-    let regions: [InteractionRegion]
-    let attachments: [TextAttachment]
-}
-```
-
-优化流程：
-
-```text
-FeedItem.text
-→ ParsedFeedText
-→ 后台构建样式和完成换行
-→ TextLayout
-→ View 直接消费行、坐标、点击区域和附件
-```
-
-如果优化版仍只保存 `NSAttributedString + height`，View 为绘制仍需再次排版，既重复工作，也可能造成后台高度与实际显示不一致。
-
-### 5.14 Parser 候选识别与重叠优先级
-
-候选方案 A：URL、话题、@和表情分别扫描，再按优先级合并。
-
-候选方案 B：从头到尾编写一个统一状态机，一次识别所有类型。
-
-最初倾向 B，认为可以降低时间复杂度。评审后确认，固定四类规则分别扫描为 `4 × n`，统一扫描为 `1 × n`，两者大 O 都是 `O(n)`，主要差异是常数。
-
-V1 选择 A：
-
-- 每类规则容易独立测试；
-- URL 和 Unicode 边界更容易维护；
-- 正文通常只有数百字符；
-- 只有性能数据证明 Parse 是瓶颈时才升级状态机。
-
-识别优先级：
+V1 为 URL、话题、@和表情分别产生候选，再按优先级解决重叠：
 
 ```text
 完整 URL
@@ -708,24 +407,23 @@ V1 选择 A：
 https://example.com/@jack#intro
 ```
 
-整体是 URL。内部的 `@jack` 和 `#intro` 不再二次识别，否则会破坏完整 URL。
+整体识别为 URL，内部不再拆成 @用户和话题。
 
 Parser 流程：
 
 ```text
-分别产生特殊候选
-→ 按优先级拒绝重叠候选
-→ 按 range 排序
-→ 在空隙中补 plain
-→ 验证完整覆盖
-→ 创建 ParsedFeedText
+产生特殊候选
+→ 拒绝低优先级重叠候选
+→ 按 Range 排序
+→ 补齐 plain
+→ 验证 ParsedFeedText
 ```
 
-### 5.15 ParsedText 缓存身份
+固定四类规则分别扫描与统一状态机都属于线性复杂度。V1 优先选择规则独立、容易测试的实现；只有性能数据证明 Parser 是瓶颈时才合并扫描。
 
-只按 `feedID` 缓存不够，因为正文可能被编辑；使用包含所有动态字段的粗粒度版本又会让点赞变化无意义地清理解析结果。
+### 5.6 缓存、测试与当前实现差异
 
-选择独立文本身份：
+解析缓存不能只按 `feedID`，也不应因点赞数变化而失效。使用独立文本身份：
 
 ```text
 TextContentIdentity
@@ -733,123 +431,26 @@ TextContentIdentity
 - textRevision
 ```
 
-正文变化：
+正文变化时清理 ParsedText；宽度、字体和主题变化时复用语义结果，只重新生成样式或 TextLayout。
 
-```text
-ParsedFeedText → 失效
-TextLayout → 失效
-正文渲染结果 → 失效
-```
+核心测试包括：
 
-点赞数变化：
-
-```text
-ParsedFeedText → 复用
-正文 TextLayout → 复用
-工具栏显示 → 更新
-```
-
-宽度、字体或主题变化：
-
-```text
-ParsedFeedText → 复用
-TextStyle / TextLayout → 按需重建
-```
-
-### 5.16 富文本测试约束
-
-基础测试：
-
-- 空字符串；
-- 只有普通文字；
-- @、话题、URL 和表情分别识别；
-- 相邻特殊片段；
+- 空字符串、普通文字和未闭合语法；
 - Emoji 与组合字符；
-- 未闭合话题或表情降级为 plain；
-- 无效 URL 降级；
-- 表情资源缺失保留原文。
+- URL 内包含 `@` 和 `#`；
+- 话题内部包含 @ 或表情语法；
+- spans 有序、无重叠、无空隙并完整还原 source；
+- 表情资源缺失时保留原文。
 
-重叠测试：
+当前工程与从零设计的主要差异：
 
-```text
-https://example.com/@jack#intro
-→ [.link]
+- 当前 `FeedTextSpan` 使用全局 `FeedAction`，而不是独立 `TextAction`；
+- 当前公开初始化器没有集中验证 Span 不变量；
+- Parser 算法和测试提供过程保证，但 Struct 本身尚未封闭非法状态；
+- 当前没有独立 `ParsedTextCache`，主要由 Repository 保留解析结果；
+- 当前已经进入优化版 CoreText `TextLayout` 路径。
 
-#欢迎@小明#
-→ [.topic]
-
-#[微笑]#
-→ [.topic]
-
-@小明#旅行#[微笑]
-→ [.mention, .topic, .emoticon]
-```
-
-每个测试还要统一验证：
-
-```swift
-let rebuilt = result.spans
-    .map { String(result.source[$0.range]) }
-    .joined()
-
-XCTAssertEqual(rebuilt, result.source)
-```
-
-并检查有序、不重叠、无空隙和字段组合合法。
-
-### 5.17 MVC 中的最终位置与处理顺序
-
-```text
-Model
-FeedItem.text：服务端原始业务事实
-
-Model 侧解析服务
-FeedTextParser：String → ParsedFeedText
-
-Presentation / Layout
-ParsedFeedText + TextStyle + Width → RichTextPresentation / TextLayout
-
-View
-只消费已经准备好的富文本或布局结果
-
-Controller
-触发流程并处理 TextAction，不实现解析和排版算法
-```
-
-无论 V1 还是优化版，数据顺序始终是：
-
-```text
-原始正文
-→ 语义解析
-→ 样式构建
-→ 文字排版
-→ View 显示
-```
-
-架构演进改变的是排版发生的位置和结果的精细程度，不改变上述依赖顺序。
-
-### 5.18 与当前实现的差异
-
-当前 Swift 工程已经实现：
-
-- `source + spans`；
-- 普通文字完整补齐；
-- URL、话题、@和表情的优先级合并；
-- `Range<String.Index>`；
-- 表情只保存名称；
-- 多组边界与重叠测试；
-- 优化版 CoreText `TextLayout`。
-
-当前实现与从零设计仍有差异：
-
-- `FeedTextSpan` 使用全局 `FeedAction`，而不是独立 `TextAction`；
-- `FeedTextSpan` 公开初始化器允许非法 Optional 组合；
-- `ParsedFeedText` 公开初始化器未集中验证有序、无重叠和完整覆盖；
-- Parser 算法与测试提供了过程保证，但 Struct 本身未封闭不变量；
-- 没有独立 `ParsedTextCache`，Repository 通过 retained 结果复用解析文本；
-- `FeedLayoutEngine` 直接读取完整 `FeedLayoutEnvironment`，尚未抽取独立 `TextStyle`。
-
-这些差异不影响当前主链工作，但构成明确的后续重构候选；是否实施仍需结合复用需求、错误风险和性能数据决定。
+在 MVC 中，`FeedItem.text` 属于业务 Model；Parser 属于 Model 侧的解析服务；Presentation/Layout 构建富文本和排版；View 只消费结果；Controller 负责协调和处理 Action。
 
 ## 6. V1：最小可行 UIKit 方案
 
