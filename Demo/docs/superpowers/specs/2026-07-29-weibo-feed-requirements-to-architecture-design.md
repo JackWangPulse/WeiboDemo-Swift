@@ -93,27 +93,15 @@ V1 规则：
 
 ## 4. 从产品行为推导业务模型
 
-### 4.1 用户身份
+### 4.1 FeedUser：用户模型推导
+
+#### 4.1.1 用户身份
 
 产品要求点击头像进入对应用户主页，因此必须有稳定、唯一的 `userID`。昵称可能重复或修改，不能作为身份。
 
 产品要求注销用户仍保留动态，但显示“用户已注销”且不可进入主页，因此需要用户状态，而不只是 `userID` 和昵称。
 
-用户信息草案：
-
-```text
-FeedUser
-- userID
-- status
-- name
-- avatarURL
-- verificationType
-- verificationReason
-- membershipType
-- membershipLevel
-```
-
-### 4.2 原始事实与展示降级分离
+#### 4.1.2 原始事实与展示降级分离
 
 初始候选方案是在 Model 解码时，把空昵称直接替换成“未知用户”。该方案简单，但会丢失“服务端确实缺少昵称”这一事实，也不利于多语言、数据上报和不同页面采用不同降级文案。
 
@@ -131,13 +119,33 @@ name 有效          → 显示真实昵称
 name 缺失          → “未知用户”
 ```
 
-### 4.3 认证和会员不能只有 Bool
+#### 4.1.3 认证和会员不能只有 Bool
 
 `isVerified` 和 `isMember` 只能表达“有或没有”，不能表达个人认证、企业认证或会员等级。
 
 因此需要类型和等级字段，并对后端未来新增的未知枚举进行降级，不能因为一个未知值导致整条动态解码失败。
 
-### 4.4 动态身份
+#### 4.1.4 FeedUser 草案
+
+完成身份、注销状态、展示降级、认证和会员的推导后，用户业务模型草案为：
+
+```text
+FeedUser
+- userID：稳定用户身份
+- status：正常、注销或其他业务状态
+- name：服务端原始昵称，可缺失
+- avatarURL：网络头像地址，可缺失
+- verificationType：认证类型，可容忍未知值
+- verificationReason：认证说明，可缺失
+- membershipType：会员类型，可缺失
+- membershipLevel：会员等级，可缺失
+```
+
+`FeedUser` 不保存默认头像、最终展示名称、昵称颜色或是否创建点击区域。这些由 Presentation 根据业务事实和当前客户端规则生成。
+
+### 4.2 FeedItem：动态模型推导
+
+#### 4.2.1 动态身份
 
 每条动态需要稳定的 `feedID`，用于：
 
@@ -149,7 +157,7 @@ name 缺失          → “未知用户”
 
 列表下标不能替代 ID，因为刷新、插入和删除会改变下标。业务 ID 不参与数学计算，客户端内部适合规范化为字符串身份。
 
-### 4.5 正文与布局结果分离
+#### 4.2.2 正文与布局结果分离
 
 “是否超过六行”依赖屏幕宽度、字体、行高和表情尺寸，应由客户端根据当前环境计算。
 
@@ -162,7 +170,7 @@ name 缺失          → “未知用户”
 
 这些属于某次布局环境下的结果。
 
-### 4.6 文本语义与 UI 表现分离
+#### 4.2.3 文本语义与 UI 表现分离
 
 候选方案 A：Parser 直接生成最终 `NSAttributedString`。
 
@@ -182,7 +190,9 @@ NSAttributedString / CTLine / 点击区域
 
 这样主题或字体变化时可以复用语义结果，只重新生成布局与显示结果。
 
-### 4.7 图片业务数据
+`ParsedFeedText` 是从 `FeedItem.text` 派生出的准备结果，不是服务端业务事实，因此不直接塞入 `FeedItem`。
+
+#### 4.2.4 图片业务数据
 
 每张图片应尽量包含：
 
@@ -196,7 +206,7 @@ FeedPicture
 
 宽高只是少量 JSON 元数据，并不等于下载原图。即使 V1 使用固定正方形，它们仍有助于后续比例布局、大图预览和异常图片安全校验。
 
-### 4.8 转发结构
+#### 4.2.5 转发结构
 
 候选方案 A：在 `FeedItem` 中堆叠 `repostText`、`repostPictures`、`repostUser` 等字段。
 
@@ -205,6 +215,41 @@ FeedPicture
 A 会造成字段重复；B 在没有服务端深度约束时可能产生无限嵌套和复杂 UI。
 
 V1 产品只展示一层转发，因此选择独立 `RepostContent`，复用 User、Picture、Card 等子模型，但不继续递归。
+
+#### 4.2.6 FeedItem 草案
+
+完成动态身份、正文、图片和转发结构的推导后，动态业务模型草案为：
+
+```text
+FeedItem
+- feedID：稳定动态身份
+- user：发布者 FeedUser
+- createdAt：发布时间
+- source：发布设备或来源
+- text：完整原始正文
+- pictures：[FeedPicture]
+- repost：RepostContent?
+- card：FeedCard?
+- tags：[FeedTag]
+- repostCount：转发数
+- commentCount：评论数
+- likeCount：点赞数
+- liked：当前用户是否已点赞
+```
+
+一层转发模型草案为：
+
+```text
+RepostContent
+- sourceItemID：原动态身份
+- user：原动态作者
+- text：原动态正文
+- pictures：[FeedPicture]
+- card：FeedCard?
+- deleted：原动态是否已删除
+```
+
+`FeedItem` 不保存解析后的文本、Cell 高度、区域 frame、绘制位图、图片任务或缓存对象。这些都是可由业务数据和显示环境重新生成的派生状态。
 
 ## 5. V1：最小可行 UIKit 方案
 
