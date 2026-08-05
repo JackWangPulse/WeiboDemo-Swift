@@ -31,7 +31,10 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let cancellation = LayoutCancellation()
             let completion = LayoutCompletion<FeedItemLayout>()
             let operation = BlockOperation { [layoutStartHook] in
-                guard !cancellation.isCancelled else { return }
+                guard !cancellation.isCancelled else {
+                    completion.resume(.failure(CancellationError()))
+                    return
+                }
                 layoutStartHook?()
                 do {
                     let result = try Self.compute(item: item, identity: identity, parsedBody: parsedBody, parsedRepost: parsedRepost, environment: environment, maximumBodyLines: maximumBodyLines, maximumRepostLines: maximumRepostLines, cancellation: cancellation)
@@ -45,7 +48,9 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                 }
             } onCancel: {
                 cancellation.cancel()
-                operation.cancel()
+                // Do not cancel the BlockOperation itself. OperationQueue may skip a
+                // cancelled operation entirely, leaving its continuation unresumed.
+                // The cancellation token stops queued/running layout work instead.
                 completion.resume(.failure(CancellationError()))
             }
         }
