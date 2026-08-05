@@ -29,6 +29,9 @@ final class FeedCellSnapshotTests: XCTestCase {
                 continue
             }
             if let diff = try SnapshotComparator.compare(reference: reference, candidate: candidate, name: snapshot.rawValue) {
+                try attachSnapshot(reference, name: "\(snapshot.rawValue)-reference.png")
+                try attachSnapshot(candidate, name: "\(snapshot.rawValue)-candidate.png")
+                try attachSnapshotData(Data(contentsOf: diff), name: "\(snapshot.rawValue)-diff.png")
                 XCTFail("Snapshot changed: \(snapshot.rawValue). Diff: \(diff.path). Tolerance is per RGBA channel <= 1 for every pixel; no changed-pixel percentage is ignored.")
             }
         }
@@ -86,6 +89,17 @@ final class FeedCellSnapshotTests: XCTestCase {
 
     private func pngData(_ image: CGImage) throws -> Data {
         let data = NSMutableData(); let destination = try XCTUnwrap(CGImageDestinationCreateWithData(data, "public.png" as CFString, 1, nil)); CGImageDestinationAddImage(destination, image, nil); XCTAssertTrue(CGImageDestinationFinalize(destination)); return data as Data
+    }
+
+    private func attachSnapshot(_ image: CGImage, name: String) throws {
+        try attachSnapshotData(pngData(image), name: name)
+    }
+
+    private func attachSnapshotData(_ data: Data, name: String) throws {
+        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.png")
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 
     private static func image(bytes: [UInt8]) -> CGImage? {
