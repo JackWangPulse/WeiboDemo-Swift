@@ -4,11 +4,14 @@ import UIKit
 @MainActor
 final class FeedViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .plain)
-    private let repository: FeedRepository
-    private let imagePipeline: any ImagePipeline
-    private let layoutCache = FeedLayoutCache()
-    private lazy var prefetchCoordinator = FeedPrefetchCoordinator(imagePipeline: imagePipeline)
-    private let timelineStore = FeedTimelineStore()
+#if DEBUG
+    private let fpsMonitor = FeedFPSMonitorView()
+#endif
+    private let repository: FeedRepository  // Repository 负责把原始微博加工成 UI 可以直接使用的完整结果
+    private let imagePipeline: any ImagePipeline  // 负责头像和微博图片：下载，解码，缓存，预取 可替换 可以替换成 YYWebImage
+    private let layoutCache = FeedLayoutCache()  // 缓存已经算好的 Cell Layout 包括 cell 高度，头像位置，表情位置，图片位置，工具栏位置，点击区域，故事板的替代
+    private lazy var prefetchCoordinator = FeedPrefetchCoordinator(imagePipeline: imagePipeline)  // 负责判断接下来应该提前准备哪些 Cell 和图片
+    private let timelineStore = FeedTimelineStore() // 列表当前的数据仓库
     private var requestedIndexes = Set<Int>()
     private var loadTask: Task<Void, Never>?
     private var preparedEnvironment: FeedLayoutEnvironment?
@@ -35,12 +38,34 @@ final class FeedViewController: UIViewController {
         tableView.prefetchDataSource = self // 高度、点击和滚动事件
         tableView.contentInsetAdjustmentBehavior = .always
         view.addSubview(tableView)
+#if DEBUG
+        view.addSubview(fpsMonitor)
+#endif
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+#if DEBUG
+        fpsMonitor.start(on: view.window?.screen ?? UIScreen.main)
+#endif
+    }
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+#if DEBUG
+        fpsMonitor.stop()
+#endif
     }
 
     override func viewDidLayoutSubviews() {
         // 必须先得到真实屏幕宽度，才能计算 Cell Layout。
         super.viewDidLayoutSubviews()
         tableView.frame = view.bounds
+#if DEBUG
+        let safeFrame = view.safeAreaLayoutGuide.layoutFrame
+        fpsMonitor.frame = CGRect(x: safeFrame.minX + 10, y: safeFrame.maxY - 52, width: 150, height: 44)
+        view.bringSubviewToFront(fpsMonitor)
+#endif
         prepareForCurrentEnvironmentIfNeeded()
     }
 
@@ -229,6 +254,100 @@ final class FeedViewController: UIViewController {
 
     func triggerMemoryPressureForTesting() async { await handleMemoryPressure() }
 }
+
+#if DEBUG
+/// A lightweight development overlay. It measures main-run-loop display-link
+/// delivery, which is useful for spotting regressions but is not a GPU benchmark.
+@MainActor
+private final class FeedFPSMonitorView: UILabel {
+    private var displayLink: CADisplayLink?
+    private var previousTimestamp: CFTimeInterval = 0
+    private var sampleStartTimestamp: CFTimeInterval = 0
+    private var frameCount = 0
+    private var hitchCount = 0
+    private var maximumFrameDuration: CFTimeInterval = 0
+    private var targetFPS = 60
+
+    init() {
+        super.init(frame: .zero)
+        numberOfLines = 2
+        textAlignment = .center
+        font = .monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        textColor = .white
+        backgroundColor = UIColor.black.withAlphaComponent(0.72)
+        layer.cornerRadius = 7
+        clipsToBounds = true
+        isUserInteractionEnabled = false
+        isAccessibilityElement = true
+        accessibilityIdentifier = "feed.fpsMonitor"
+        text = "FPS --/--\nHitch 0  Max --ms"
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func start(on screen: UIScreen) {
+        guard displayLink == nil else { return }
+        targetFPS = max(screen.maximumFramesPerSecond, 1)
+        resetSample()
+        let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+        if #available(iOS 15.0, *) {
+            link.preferredFrameRateRange = CAFrameRateRange(
+                minimum: Float(min(30, targetFPS)),
+                maximum: Float(targetFPS),
+                preferred: Float(targetFPS)
+            )
+        } else {
+            link.preferredFramesPerSecond = targetFPS
+        }
+        link.add(to: .main, forMode: .common)
+        displayLink = link
+    }
+
+    func stop() {
+        displayLink?.invalidate()
+        displayLink = nil
+        resetSample()
+    }
+
+    @objc private func tick(_ link: CADisplayLink) {
+        if previousTimestamp == 0 {
+            previousTimestamp = link.timestamp
+            sampleStartTimestamp = link.timestamp
+            return
+        }
+
+        let frameDuration = link.timestamp - previousTimestamp
+        previousTimestamp = link.timestamp
+        frameCount += 1
+        maximumFrameDuration = max(maximumFrameDuration, frameDuration)
+
+        let expectedDuration = 1.0 / Double(targetFPS)
+        if frameDuration > expectedDuration * 1.5 {
+            hitchCount += 1
+        }
+
+        let elapsed = link.timestamp - sampleStartTimestamp
+        guard elapsed >= 0.5 else { return }
+        let fps = min(Int((Double(frameCount) / elapsed).rounded()), targetFPS)
+        let maximumMilliseconds = Int((maximumFrameDuration * 1_000).rounded())
+        text = "FPS \(fps)/\(targetFPS)\nHitch \(hitchCount)  Max \(maximumMilliseconds)ms"
+        accessibilityLabel = "FPS \(fps) of \(targetFPS), hitches \(hitchCount), maximum frame \(maximumMilliseconds) milliseconds"
+
+        frameCount = 0
+        hitchCount = 0
+        maximumFrameDuration = 0
+        sampleStartTimestamp = link.timestamp
+    }
+
+    private func resetSample() {
+        previousTimestamp = 0
+        sampleStartTimestamp = 0
+        frameCount = 0
+        hitchCount = 0
+        maximumFrameDuration = 0
+    }
+}
+#endif
 
 extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { timelineStore.count }
