@@ -25,6 +25,20 @@
             buildForRunning = "NO"
             buildForProfiling = "NO"
             buildForArchiving = "NO"
+            buildForAnalyzing = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F10000000000000000000030"
+               BuildableName = "SwiftWeiboFeedUITests.xctest"
+               BlueprintName = "SwiftWeiboFeedUITests"
+               ReferencedContainer = "container:YYKitDemo.xcodeproj">
+            </BuildableReference>
+         </BuildActionEntry>
+         <BuildActionEntry
+            buildForTesting = "YES"
+            buildForRunning = "NO"
+            buildForProfiling = "NO"
+            buildForArchiving = "NO"
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
@@ -56,6 +70,16 @@
                BlueprintIdentifier = "A10000000000000000000031"
                BuildableName = "SwiftWeiboFeedTests.xctest"
                BlueprintName = "SwiftWeiboFeedTests"
+               ReferencedContainer = "container:YYKitDemo.xcodeproj">
+            </BuildableReference>
+         </TestableReference>
+         <TestableReference
+            skipped = "NO">
+            <BuildableReference
+               BuildableIdentifier = "primary"
+               BlueprintIdentifier = "F10000000000000000000030"
+               BuildableName = "SwiftWeiboFeedUITests.xctest"
+               BlueprintName = "SwiftWeiboFeedUITests"
                ReferencedContainer = "container:YYKitDemo.xcodeproj">
             </BuildableReference>
          </TestableReference>

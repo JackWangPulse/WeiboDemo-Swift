@@ -245,7 +245,11 @@ public final class FeedContentView: UIView {
         var elements: [UIAccessibilityElement] = []
         func append(label: String, frame: CGRect, traits: UIAccessibilityTraits = .button, action: FeedAction? = nil) {
             let element = FeedAccessibilityElement(accessibilityContainer: self, action: action) { [weak self] action in self?.onAction?(action) }
-            element.accessibilityLabel = label; element.accessibilityTraits = traits; element.accessibilityFrameInContainerSpace = frame; elements.append(element)
+            element.accessibilityLabel = label
+            element.accessibilityIdentifier = action?.accessibilityIdentifier
+            element.accessibilityTraits = traits
+            element.accessibilityFrameInContainerSpace = frame
+            elements.append(element)
         }
         for span in entry.parsed.spans where span.kind == .plain {
             let plainBody = String(entry.parsed.source[span.range])
@@ -340,4 +344,17 @@ final class FeedAccessibilityElement: UIAccessibilityElement {
     private let activation: (FeedAction) -> Void
     init(accessibilityContainer container: Any, action: FeedAction?, activation: @escaping (FeedAction) -> Void) { self.action = action; self.activation = activation; super.init(accessibilityContainer: container) }
     override func accessibilityActivate() -> Bool { guard let action else { return false }; activation(action); return true }
+}
+
+private extension FeedAction {
+    var accessibilityIdentifier: String? {
+        switch self {
+        case .expand:
+            return "feed.more"
+        case let .media(_, index):
+            return "feed.media.\(index)"
+        default:
+            return nil
+        }
+    }
 }

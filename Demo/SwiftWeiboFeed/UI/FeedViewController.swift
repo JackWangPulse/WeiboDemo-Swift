@@ -31,6 +31,7 @@ final class FeedViewController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         tableView.backgroundColor = .systemGroupedBackground
+        tableView.accessibilityIdentifier = "feed.table"
         tableView.separatorStyle = .none
         tableView.register(FeedCell.self, forCellReuseIdentifier: "FeedCell") // 注册可复用 Cell
         tableView.dataSource = self // 有多少行、每行显示什么
@@ -358,6 +359,7 @@ extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
 
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "FeedCell", for: indexPath) as! FeedCell
+        cell.accessibilityIdentifier = "feed.cell.\(indexPath.row)"
         if let entry = timelineStore.prepared(at: indexPath.row) {
             cell.apply(entry, pipeline: imagePipeline)
         } else {
