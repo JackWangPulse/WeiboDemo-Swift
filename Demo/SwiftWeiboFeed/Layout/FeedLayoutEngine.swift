@@ -41,6 +41,11 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                     completion.resume(.success(result))
                 } catch { completion.resume(.failure(error)) }
             }
+            operation.completionBlock = {
+                // OperationQueue is allowed to skip the body of an operation that
+                // was cancelled before it started. Always close the async wait.
+                completion.resume(.failure(CancellationError()))
+            }
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
                     completion.install(continuation)
@@ -48,9 +53,7 @@ public final class FeedLayoutEngine: @unchecked Sendable {
                 }
             } onCancel: {
                 cancellation.cancel()
-                // Do not cancel the BlockOperation itself. OperationQueue may skip a
-                // cancelled operation entirely, leaving its continuation unresumed.
-                // The cancellation token stops queued/running layout work instead.
+                operation.cancel()
                 completion.resume(.failure(CancellationError()))
             }
         }
