@@ -160,7 +160,7 @@ final class PerformanceSmokeTests: XCTestCase {
         let environment = FeedLayoutEnvironment(width: 414, scale: 2, contentSizeCategory: .large, themeVersion: 0, algorithmVersion: 1)
         let publication = try await repository.apply(page: page, environment: environment)
         var entries: [PreparedFeedEntry]? = await repository.transferPreparedEntries(matching: publication.token, environment: environment)
-        weak let distantStorage = entries?[2].layout.body.storage
+        weak var distantStorage = entries?[2].layout.body.storage
         let store = FeedTimelineStore(); store.replace(with: try XCTUnwrap(entries))
         let cache = FeedLayoutCache(); entries?.forEach { cache.insert($0.layout, cost: 1) }
         let prefetch = FeedPrefetchCoordinator(imagePipeline: EmptyImagePipeline()); prefetch.setEntries(try XCTUnwrap(entries))

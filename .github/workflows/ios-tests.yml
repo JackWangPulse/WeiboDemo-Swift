@@ -21,13 +21,25 @@ jobs:
       - name: Select Xcode 16.4
         run: sudo xcode-select --switch /Applications/Xcode_16.4.app
 
+      - name: Wait for iOS Simulator
+        run: |
+          for attempt in {1..6}; do
+            if xcrun simctl list devices available | grep -q 'iPhone 16 Pro'; then
+              exit 0
+            fi
+            killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
+            sleep 10
+          done
+          xcrun simctl list devices
+          exit 1
+
       - name: Run unit tests
         run: |
           mkdir -p TestResults
           xcodebuild \
             -project Demo/YYKitDemo.xcodeproj \
             -scheme SwiftWeiboFeed \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
             -only-testing:SwiftWeiboFeedTests \
             -resultBundlePath TestResults/UnitTests.xcresult \
             test
@@ -50,13 +62,25 @@ jobs:
       - name: Select Xcode 16.4
         run: sudo xcode-select --switch /Applications/Xcode_16.4.app
 
+      - name: Wait for iOS Simulator
+        run: |
+          for attempt in {1..6}; do
+            if xcrun simctl list devices available | grep -q 'iPhone 16 Pro'; then
+              exit 0
+            fi
+            killall -9 com.apple.CoreSimulator.CoreSimulatorService || true
+            sleep 10
+          done
+          xcrun simctl list devices
+          exit 1
+
       - name: Run UI smoke tests
         run: |
           mkdir -p TestResults
           xcodebuild \
             -project Demo/YYKitDemo.xcodeproj \
             -scheme SwiftWeiboFeed \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
             -only-testing:SwiftWeiboFeedUITests \
             -resultBundlePath TestResults/UITests.xcresult \
             test
