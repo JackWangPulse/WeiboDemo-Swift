@@ -605,10 +605,14 @@ private final class LayoutCompletion<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Error>?
     private var pending: Result<Value, Error>?
+    private var completed = false
 
     func install(_ continuation: CheckedContinuation<Value, Error>) {
         let result = lock.withLock { () -> Result<Value, Error>? in
-            if let pending { return pending }
+            if let pending {
+                self.pending = nil
+                return pending
+            }
             self.continuation = continuation
             return nil
         }
@@ -619,13 +623,13 @@ private final class LayoutCompletion<Value: Sendable>: @unchecked Sendable {
 
     func resume(_ result: Result<Value, Error>) {
         let continuation = lock.withLock { () -> CheckedContinuation<Value, Error>? in
-            guard pending == nil else { return nil }
+            guard !completed else { return nil }
+            completed = true
             guard let continuation else {
                 pending = result
                 return nil
             }
             self.continuation = nil
-            pending = result
             return continuation
         }
         continuation?.resume(with: result)
