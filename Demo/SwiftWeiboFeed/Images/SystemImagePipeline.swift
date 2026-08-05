@@ -112,7 +112,7 @@ private final class SharedSubscriptionState: @unchecked Sendable {
     @discardableResult
     func cancel(_ subscriber: UUID, cache: DecodedImageCache, request: ImageRequest) -> Bool {
         lock.withLock {
-            guard subscribers.remove(subscriber) != nil else { return subscribers.isEmpty }
+            guard subscribers.remove(subscriber) != nil else { return false }
             if subscribers.isEmpty { cache.removeImage(for: request) }
             return subscribers.isEmpty
         }
@@ -121,7 +121,7 @@ private final class SharedSubscriptionState: @unchecked Sendable {
     @discardableResult
     func finish(_ subscriber: UUID) -> Bool {
         lock.withLock {
-            subscribers.remove(subscriber)
+            guard subscribers.remove(subscriber) != nil else { return false }
             return subscribers.isEmpty
         }
     }
@@ -194,6 +194,7 @@ actor SystemImagePipeline: ImagePipeline {
 
     private static let maximumEncodedBytes = 80 * 1_024 * 1_024
     private let session: URLSession
+    private let encodedCache: URLCache?
     private let cache: DecodedImageCache
     private let decoder: ImageDecoder
     private let cancellationCleanupHook: (@Sendable () -> Void)?
@@ -216,6 +217,7 @@ actor SystemImagePipeline: ImagePipeline {
         }
         configuration.requestCachePolicy = .useProtocolCachePolicy
         session = URLSession(configuration: configuration)
+        encodedCache = configuration.urlCache
         cache = decodedCache
         decoder = ImageDecoder(hook: decodeHook, enqueuedHook: decodeEnqueuedHook)
         self.cancellationCleanupHook = cancellationCleanupHook
@@ -223,18 +225,22 @@ actor SystemImagePipeline: ImagePipeline {
 
     func image(for request: ImageRequest) async throws -> ImageResponse {
         try Task.checkCancellation()
+        // 解码图片的缓存
         if let cached = cache.image(for: request) {
             return ImageResponse(request: request, image: cached.value)
         }
         let subscriber = UUID()
         let task: Task<SendableCGImage, Error>
         let subscriptions: SharedSubscriptionState
+        // 合并相同请求
         if let current = inFlight[request] {
             current.subscriptions.insert(subscriber)
+            // 它不会再次下载，只是订阅同一个任务结果。
             task = current.task
             subscriptions = current.subscriptions
         } else {
             let session = session
+            let encodedCache = encodedCache
             let decoder = decoder
             let cache = cache
             let state = SharedSubscriptionState()
@@ -243,13 +249,37 @@ actor SystemImagePipeline: ImagePipeline {
             task = Task.detached(priority: Task.currentPriority) {
                 var urlRequest = URLRequest(url: request.url)
                 urlRequest.cachePolicy = .useProtocolCachePolicy
-                let (data, response) = try await FeedSignpost.measureAsync(.download) {
-                    try await session.data(for: urlRequest)
+                let data: Data
+                let response: URLResponse
+                let loadedFromCache: Bool
+                if let cached = encodedCache?.cachedResponse(for: urlRequest),
+                   let cachedHTTP = cached.response as? HTTPURLResponse,
+                   (200..<300).contains(cachedHTTP.statusCode) {
+                    data = cached.data
+                    response = cached.response
+                    loadedFromCache = true
+                } else {
+                    // URLCache may retain an intermediate 301/302 when a redirected
+                    // request is cancelled. Never treat that redirect body as image
+                    // bytes; evict it and let URLSession perform the redirect again.
+                    encodedCache?.removeCachedResponse(for: urlRequest)
+                    (data, response) = try await FeedSignpost.measureAsync(.download) {
+                        // 没有缓存、也没有正在执行的相同任务时：下载原图数据
+                        try await session.data(for: urlRequest)
+                    }
+                    loadedFromCache = false
                 }
                 guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
                     throw SystemImagePipelineError.invalidResponse
                 }
                 guard data.count <= Self.maximumEncodedBytes else { throw SystemImagePipelineError.encodedImageTooLarge }
+                if !loadedFromCache {
+                    encodedCache?.storeCachedResponse(
+                        CachedURLResponse(response: http, data: data, storagePolicy: .allowed),
+                        for: urlRequest
+                    )
+                }
+                // 后台缩略解码 异步
                 let image = try await decoder.decode(data, request: request)
                 try Task.checkCancellation()
                 state.cacheIfEligible { cache.insert(image, for: request) }
@@ -267,9 +297,11 @@ actor SystemImagePipeline: ImagePipeline {
                 return ImageResponse(request: request, image: image.value)
             } catch {
                 unsubscribe(subscriber, request: request, subscriptions: subscriptions, cancelWhenEmpty: true)
+                if Task.isCancelled { throw CancellationError() }
                 throw error
             }
         } onCancel: {
+            // cell 滑走触发
             let isEmpty = subscriptions.cancel(subscriber, cache: self.cache, request: request)
             let cleanupHook = self.cancellationCleanupHook
             Task {
@@ -338,6 +370,7 @@ actor SystemImagePipeline: ImagePipeline {
     }
 
     private func prefetchFinished(_ request: ImageRequest, token: UUID) {
+        // 已经没有页面需要它，就避免留下这次低价值结果占据解码缓存。
         guard prefetchTasks[request]?.token == token else { return }
         prefetchTasks.removeValue(forKey: request)
     }

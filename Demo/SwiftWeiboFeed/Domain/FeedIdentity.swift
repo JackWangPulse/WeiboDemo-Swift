@@ -1,5 +1,6 @@
 import Foundation
-
+// 为什么不直接用string 编译器能区分不同业务身份。 区分微博ID 用户ID
+// Hashable 比较是否相等 作为 Dictionary 的 Key 作为缓存身份的一部分
 public struct FeedID: RawRepresentable, Hashable, Codable, Sendable {
     public let rawValue: String
 
@@ -28,6 +29,13 @@ public struct FeedContentIdentity: Hashable, Sendable {
 }
 
 struct LosslessStringID: Decodable {
+    /*
+     JSON ID
+       ├─ String → 直接保存
+       ├─ Int64  → 转成 String
+       ├─ UInt64 → 转成 String
+       └─ 其他类型 → 解码失败
+    */
     let value: String
 
     init(from decoder: Decoder) throws {

@@ -23,7 +23,7 @@ final class DecodedImageCache: @unchecked Sendable {
     init(totalCostLimit: Int = 64 * 1_024 * 1_024) {
         storage.totalCostLimit = max(0, totalCostLimit)
     }
-
+    // 保存的是已经可以直接显示的 CGImage
     func image(for request: ImageRequest) -> SendableCGImage? {
         storage.object(forKey: Key(request))?.image
     }

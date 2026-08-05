@@ -1,0 +1,11 @@
+schemaVersion: 1
+
+enabledWorkflows:
+  - simulator
+  - simulator-management
+  - ui-automation
+
+sessionDefaults:
+  projectPath: "./YYKitDemo.xcodeproj"
+  scheme: "SwiftWeiboFeed"
+  simulatorName: "iPhone 17"

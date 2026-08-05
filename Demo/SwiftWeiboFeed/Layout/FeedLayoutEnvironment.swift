@@ -17,14 +17,14 @@ public struct FeedPalette: Hashable, Sendable {
 }
 
 public struct FeedLayoutEnvironment: Hashable, Sendable {
-    public let containerPixelWidth: Int
+    public let containerPixelWidth: Int // 用像素宽度作为标识，可以减少 CGFloat 精度造成的缓存 Key 不稳定。
     public let displayScale: Int
-    public let contentSizeCategory: String
+    public let contentSizeCategory: String  // 对应系统“字体大小”设置
     public let themeVersion: UInt
     public let layoutAlgorithmVersion: UInt
     public let bodyFontSize: Double
     public let bodyLineHeight: Double
-    public let palette: FeedPalette
+    public let palette: FeedPalette // FeedPalette 集中保存正文、次要文字、链接、转发背景和分隔线等颜色。
 
     public init(
         width: CGFloat,
@@ -63,6 +63,8 @@ public struct FeedLayoutEnvironment: Hashable, Sendable {
         Self(width: width, scale: scale, contentSizeCategory: contentSizeCategory, themeVersion: themeVersion, algorithmVersion: algorithmVersion)
     }
 }
+
+// 只有微博内容和环境都相同，旧布局才能安全复用。缓存
 public struct FeedLayoutIdentity: Hashable, Sendable {
     public let content: FeedContentIdentity
     public let environment: FeedLayoutEnvironment

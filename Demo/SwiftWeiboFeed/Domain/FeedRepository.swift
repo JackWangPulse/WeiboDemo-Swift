@@ -65,11 +65,11 @@ public struct FeedPublication: Sendable {
 }
 
 public struct PreparedFeedEntry: Sendable {
-    public let item: FeedItem
-    public let identity: FeedContentIdentity
-    public let parsed: ParsedFeedText
-    public let parsedRepost: ParsedFeedText?
-    public let layout: FeedItemLayout
+    public let item: FeedItem // 微博数据
+    public let identity: FeedContentIdentity // 稳定身份，用于 Diff
+    public let parsed: ParsedFeedText // 解析后的正文
+    public let parsedRepost: ParsedFeedText? // 解析后的转发正文
+    public let layout: FeedItemLayout // 提前计算好的尺寸与位置
 
     public init(item: FeedItem, identity: FeedContentIdentity, parsed: ParsedFeedText, parsedRepost: ParsedFeedText? = nil, layout: FeedItemLayout) {
         self.item = item
@@ -79,7 +79,7 @@ public struct PreparedFeedEntry: Sendable {
         self.layout = layout
     }
 }
-
+// actor 保证这些状态不会同时被多个异步任务修改，避免第一页和第二页请求互相覆盖。
 public actor FeedRepository {
     public typealias LayoutPreparation = @Sendable (
         _ item: FeedItem,
@@ -87,7 +87,7 @@ public actor FeedRepository {
         _ environment: FeedLayoutEnvironment
     ) async throws -> (ParsedFeedText, ParsedFeedText?, FeedItemLayout)
 
-    private struct RetainedEntry: Sendable {
+    private struct RetainedEntry: Sendable { // 解析文本缓存
         let item: FeedItem
         let identity: FeedContentIdentity
         let parsed: ParsedFeedText
@@ -113,6 +113,8 @@ public actor FeedRepository {
         if let prepareLayout {
             self.prepareLayout = prepareLayout
         } else {
+            // 下面干的FeedItem -> 解析正文、转发正文 -> 计算 Cell 布局
+            // 为以后铺垫 -> PreparedFeedEntry -> 之后cell渲染
             let parsingExecutor = ParsingExecutor(
                 concurrency: 2,
                 startHook: parsingStartHook,
@@ -175,6 +177,11 @@ public actor FeedRepository {
                         try Task.checkCancellation()
                         let index = indexesToPrepare[position]
                         let item: FeedItem, identity: FeedContentIdentity, parsed: ParsedFeedText, parsedRepost: ParsedFeedText?, layout: FeedItemLayout
+                        /*
+                         reuse：数据和屏幕环境都没变，直接复用整个结果。
+                         relayout：微博内容没变，但屏幕宽度或字体环境变了；复用富文本，只重新计算布局。
+                         prepare：微博内容变了或者是新数据；重新解析并重新布局。
+                        */
                         switch plans[index] {
                         case let .prepare(nextItem, nextIdentity):
                             item = nextItem; identity = nextIdentity

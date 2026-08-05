@@ -91,6 +91,17 @@ public final class AsyncRenderLayer: CALayer {
         self.init(executor: RenderQueueExecutor.shared, contextFactory: Self.makeBitmapContext, commit: commit)
     }
 
+    /*
+     创建 CGContext 位图画布
+             ↓
+     用 CTLineDraw 画正文
+             ↓
+     CGContext.makeImage()
+             ↓
+     得到 CGImage
+             ↓
+     bodyLayer.contents = image
+     */
     @MainActor
     public func display(_ task: AsyncDisplayTask) {
         guard task.size.width.isFinite, task.size.height.isFinite, task.scale.isFinite,
@@ -107,19 +118,23 @@ public final class AsyncRenderLayer: CALayer {
         }
         let factory = contextFactory
         let layerBox = WeakLayerBox(self)
-        executor.execute {
+        executor.execute { // 后台执行
             let interval = FeedSignpost.begin(.display)
             defer { interval.end() }
             guard !token.isCancelled else { return }
             guard let (width, height) = Self.pixelDimensions(size: task.size, scale: task.scale),
                   !token.isCancelled,
+                  // 创建位图画布
                   let bitmap = factory(width, height, opaque) else { return }
             bitmap.context.scaleBy(x: task.scale, y: task.scale)
             guard !token.isCancelled else { return }
+            // 执行真正的绘制
             task.draw(bitmap.context, token)
             // Drawing closures use the token between their semantic groups; the layer
             // checks again at the boundary before materializing the immutable bitmap.
+            // 生成不可变图片
             guard !token.isCancelled, let image = bitmap.makeImage(), !token.isCancelled else { return }
+            // 回到主线程显示
             DispatchQueue.main.async {
                 guard let self = layerBox.value, !token.isCancelled, self.isCurrent(task.identity, token: token) else { return }
                 if let commitObserver = self.commitObserver {

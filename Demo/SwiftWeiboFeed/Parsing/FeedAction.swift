@@ -14,6 +14,7 @@ public enum FeedAction: Hashable, Sendable {
     case url(URL)
     case tag(String)
     case expand(FeedID)
+    case media(urls: [URL], index: Int)
     case repost
     case comment
     case like

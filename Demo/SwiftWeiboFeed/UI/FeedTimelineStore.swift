@@ -13,6 +13,7 @@ final class FeedTimelineStore {
         let generation: UInt64
         var exactHeight: CGFloat
         var maximumBodyLines: Int? = 6
+        var maximumRepostLines: Int? = 6
         var prepared: PreparedFeedEntry?
     }
 
@@ -35,15 +36,26 @@ final class FeedTimelineStore {
               records[index].generation == expectedGeneration,
               records[index].identity == entry.identity,
               records[index].expectedLayoutIdentity == entry.layout.identity,
-              (records[index].maximumBodyLines == nil || abs(records[index].exactHeight - entry.layout.height) < 0.5) else { return false }
+              (records[index].maximumBodyLines == nil ||
+               records[index].maximumRepostLines == nil ||
+               abs(records[index].exactHeight - entry.layout.height) < 0.5) else { return false }
         records[index].exactHeight = entry.layout.height
         records[index].prepared = entry
         return true
     }
 
     func expand(itemID: FeedID) -> Int? {
-        guard let index = records.firstIndex(where: { $0.item.id == itemID }),
-              records[index].maximumBodyLines != nil else { return nil }
+        guard let index = records.firstIndex(where: {
+            $0.item.id == itemID || $0.item.repost?.id == itemID
+        }) else { return nil }
+        if records[index].item.id == itemID {
+            guard records[index].maximumBodyLines != nil else { return nil }
+            records[index].maximumBodyLines = nil
+        } else {
+            guard records[index].item.repost?.id == itemID,
+                  records[index].maximumRepostLines != nil else { return nil }
+            records[index].maximumRepostLines = nil
+        }
         let nextIdentity = FeedContentIdentity(
             itemID: records[index].identity.itemID,
             contentVersion: records[index].identity.contentVersion &+ 1
@@ -53,7 +65,6 @@ final class FeedTimelineStore {
             content: nextIdentity,
             environment: records[index].expectedLayoutIdentity.environment
         )
-        records[index].maximumBodyLines = nil
         records[index].prepared = nil
         return index
     }

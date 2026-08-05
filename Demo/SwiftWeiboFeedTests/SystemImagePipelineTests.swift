@@ -32,6 +32,27 @@ final class SystemImagePipelineTests: XCTestCase {
         XCTAssertEqual(StubURLProtocol.loadCount, 1, "URLCache should reuse encoded bytes")
     }
 
+    func testCachedRedirectIsDiscardedBeforeLoadingFinalImage() async throws {
+        StubURLProtocol.responseData = Self.png(width: 800, height: 400)
+        let configuration = makeConfiguration()
+        let imageRequest = request(width: 200, height: 200, path: "cached-redirect")
+        let redirect = HTTPURLResponse(
+            url: imageRequest.url,
+            statusCode: 301,
+            httpVersion: nil,
+            headerFields: ["Location": "//cdn.fixture.invalid/final.png"]
+        )!
+        configuration.urlCache?.storeCachedResponse(
+            CachedURLResponse(response: redirect, data: Data("redirect".utf8), storagePolicy: .allowed),
+            for: URLRequest(url: imageRequest.url)
+        )
+
+        let response = try await SystemImagePipeline(configuration: configuration).image(for: imageRequest)
+
+        XCTAssertEqual(response.image.width, 200)
+        XCTAssertEqual(StubURLProtocol.loadCount, 1, "a cached redirect must be evicted so URLSession can load the final image")
+    }
+
     func testCancellingOneWaiterDoesNotCancelAnother() async throws {
         StubURLProtocol.responseData = Self.png(width: 800, height: 400)
         StubURLProtocol.gate = DispatchSemaphore(value: 0)
@@ -133,12 +154,17 @@ final class SystemImagePipelineTests: XCTestCase {
         let replacementSubscriberCount = await pipeline.activeSubscriberCountForTesting(imageRequest)
         XCTAssertEqual(replacementSubscriberCount, 1)
         cleanup.release()
+        await Task.yield()
+        XCTAssertEqual(
+            StubURLProtocol.stopLoadingCount,
+            0,
+            "shared network work must remain alive while the replacement subscriber owns it"
+        )
         StubURLProtocol.gate?.signal()
         await XCTAssertCancellationError { try await cancelled.value }
         let replacementResponse = try await replacement.value
         XCTAssertEqual(replacementResponse.image.width, 207)
         XCTAssertEqual(StubURLProtocol.loadCount, 1)
-        XCTAssertEqual(StubURLProtocol.stopLoadingCount, 0)
     }
 
     func testCancelDuringControlledDecodeReturnsCancellationAndIsNotCached() async throws {
@@ -176,16 +202,20 @@ final class SystemImagePipelineTests: XCTestCase {
         decodeEnqueuedHook: (@Sendable () -> Void)? = nil,
         cancellationCleanupHook: (@Sendable () -> Void)? = nil
     ) -> SystemImagePipeline {
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.protocolClasses = [StubURLProtocol.self]
-        configuration.urlCache = URLCache(memoryCapacity: 4_000_000, diskCapacity: 0)
-        configuration.requestCachePolicy = .useProtocolCachePolicy
-        return SystemImagePipeline(
-            configuration: configuration,
+        SystemImagePipeline(
+            configuration: makeConfiguration(),
             decodeHook: decodeHook,
             decodeEnqueuedHook: decodeEnqueuedHook,
             cancellationCleanupHook: cancellationCleanupHook
         )
+    }
+
+    private func makeConfiguration() -> URLSessionConfiguration {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [StubURLProtocol.self]
+        configuration.urlCache = URLCache(memoryCapacity: 4_000_000, diskCapacity: 0)
+        configuration.requestCachePolicy = .useProtocolCachePolicy
+        return configuration
     }
 
     private func request(width: Int, height: Int, mode: ImageContentMode = .aspectFit, path: String = "image") -> ImageRequest {

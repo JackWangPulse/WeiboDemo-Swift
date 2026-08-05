@@ -3,6 +3,8 @@ import Foundation
 enum FeedScrollDirection: Sendable { case forward, backward }
 enum FeedPreparationKind: Sendable { case layout, render }
 enum FeedPreparationPriority: Int, Comparable, Sendable {
+    // 0 当前屏幕上的 Cell，最高优先级;   1 滚动方向前方，即将出现;
+    // 2 UITableView 系统建议预加载的行; 3 已经滑过去但仍靠近屏幕的行，最低优先级;
     case visible = 0, forward = 1, tablePrefetch = 2, trailing = 3
     static func < (lhs: Self, rhs: Self) -> Bool { lhs.rawValue < rhs.rawValue }
 }

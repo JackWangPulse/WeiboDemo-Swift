@@ -1,25 +1,60 @@
 import Foundation
 
-public extension JSONDecoder {
+/*
+ {
+   "statuses": [
+     {
+       "id": 123,
+       "user": {
+         "id": "456",
+         "screen_name": "续迁 pocky",
+         "avatar_large": "http://example.com/avatar.jpg",
+         "verified": true,
+         "mbrank": 4
+       }
+     }
+   ]
+ }
+ 解析成
+ FeedPage(
+     items: [
+         FeedItem(
+             user: FeedUser(
+                 id: FeedID(rawValue: "456"),
+                 name: "续迁 pocky",
+                 avatarURL: ...,
+                 isVerified: true,
+                 membershipRank: 4
+             )
+         )
+     ]
+ )
+ */
+
+public extension JSONDecoder {  // 自定义 Decodable：怎样兼容微博 JSON 中缺字段、错误类型和旧 URL。
     static var weibo: JSONDecoder { JSONDecoder() }
 }
-
-public struct FeedPage: Decodable, Sendable {
+// Decodable表示它可以从 JSON、Plist 等编码数据中被创建。
+// Sendable 它表示这个值可以安全地从一个并发执行环境传给另一个执行环境。可多线程通信
+public struct FeedPage: Decodable, Sendable { // 一次加载的一页微博
     public let items: [FeedItem]
-
+    // 把 statuses 映射成 items
     private enum CodingKeys: String, CodingKey { case items = "statuses" }
 }
 
-public struct FeedUser: Decodable, Hashable, Sendable {
+public struct FeedUser: Decodable, Hashable, Sendable {  //用户、头像、认证和会员信息。
+    // 用户基本信息
     public let id: FeedID
     public let name: String
     public let avatarURL: URL?
+    // 认证信息
     public let isVerified: Bool
     public let verifiedType: Int?
     public let verifiedLevel: Int?
     public let verifiedReason: String?
+    // 会员信息
     public let membershipRank: Int
-
+    // 处理字段差异
     private enum CodingKeys: String, CodingKey {
         case id, name
         case screenName = "screen_name"
@@ -34,12 +69,14 @@ public struct FeedUser: Decodable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(FeedID.self, forKey: .id)
+        id = try container.decode(FeedID.self, forKey: .id) // 没有用try? 说明id必须要有
+        // 两级fallback
         if let name = try container.decodeIfPresent(String.self, forKey: .name) {
             self.name = name
         } else {
             name = try container.decode(String.self, forKey: .screenName)
         }
+        // 头像也是两级fallback 首先获取高清 不行就nil
         avatarURL = container.lossyURL(forKey: .avatarURL)
             ?? container.lossyURL(forKey: .profileImageURL)
         isVerified = (try? container.decodeIfPresent(Bool.self, forKey: .isVerified)) ?? false
@@ -66,6 +103,46 @@ public struct FeedPicture: Decodable, Hashable, Sendable {
         url = container.lossyURL(forKey: .url)
             ?? container.lossyURL(forKey: .thumbnailURL)
     }
+
+    init(id: String?, url: URL?) {
+        self.id = id
+        self.url = url
+    }
+}
+
+private struct FeedPictureVariant: Decodable {
+    let url: URL?
+
+    private enum CodingKeys: String, CodingKey { case url }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        url = container.lossyURL(forKey: .url)
+    }
+}
+
+private struct FeedPictureInfo: Decodable {
+    let id: String?
+    let thumbnail: FeedPictureVariant?
+    let bmiddle: FeedPictureVariant?
+    let middleplus: FeedPictureVariant?
+    let large: FeedPictureVariant?
+    let largest: FeedPictureVariant?
+    let original: FeedPictureVariant?
+
+    var preferredURL: URL? {
+        thumbnail?.url
+            ?? bmiddle?.url
+            ?? middleplus?.url
+            ?? large?.url
+            ?? largest?.url
+            ?? original?.url
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id = "pic_id"
+        case thumbnail, bmiddle, middleplus, large, largest, original
+    }
 }
 
 public struct FeedCard: Decodable, Hashable, Sendable {
@@ -91,6 +168,7 @@ public struct FeedCard: Decodable, Hashable, Sendable {
 }
 
 private extension KeyedDecodingContainer {
+    // URL 字段有问题时允许丢弃这个字段，不让整个模型解码失败。
     func lossyURL(forKey key: Key) -> URL? {
         guard let string = try? decodeIfPresent(String.self, forKey: key),
               !string.isEmpty else { return nil }
@@ -112,7 +190,7 @@ public struct FeedTag: Decodable, Hashable, Sendable {
             ?? container.decode(String.self, forKey: .tagName)
     }
 }
-
+// indirect 表示枚举关联值使用间接存储。??
 private indirect enum FeedItemRepost: Decodable, Hashable, Sendable {
     case item(FeedItem)
 
@@ -121,20 +199,25 @@ private indirect enum FeedItemRepost: Decodable, Hashable, Sendable {
     }
 }
 
-public struct FeedItem: Decodable, Hashable, Sendable {
+public struct FeedItem: Decodable, Hashable, Sendable {  // 一条微博的完整数据
+    // 核心内容
     public let id: FeedID
     public let user: FeedUser
     public let text: String
+    // 媒体
     public let pictures: [FeedPicture]
+    // 附加内容
     public var repost: FeedItem? {
         guard case let .item(item)? = repostStorage else { return nil }
         return item
-    }
-    public let card: FeedCard?
+    } // 业务上，转发微博本身也是一条微博，间接枚举 节省内存
+    public let card: FeedCard? // Card 对应微博中的链接卡片
     public let tags: [FeedTag]
+    // 互动数据
     public let repostCount: Int
     public let commentCount: Int
     public let likeCount: Int
+    // 元数据
     public let createdAt: Date?
     public let source: String?
 
@@ -143,6 +226,8 @@ public struct FeedItem: Decodable, Hashable, Sendable {
     private enum CodingKeys: String, CodingKey {
         case id, user, text, pics
         case pictureURLs = "pic_urls"
+        case pictureIDs = "pic_ids"
+        case pictureInfos = "pic_infos"
         case repost = "retweeted_status"
         case card = "page_info"
         case tags = "tag_struct"
@@ -155,12 +240,26 @@ public struct FeedItem: Decodable, Hashable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        // 必须要的字段 没id建立不了缓存和cell身份 没user展示不了作者主页 处理不了用户点击 没text则丢失文本主体
         id = try container.decode(FeedID.self, forKey: .id)
         user = try container.decode(FeedUser.self, forKey: .user)
         text = try container.decode(String.self, forKey: .text)
-        pictures = (try? container.decodeIfPresent([FeedPicture].self, forKey: .pics))
+        // FeedPicture 只保存图片身份和 URL ImagePipeline 负责下载和解码
+        let directPictures = (try? container.decodeIfPresent([FeedPicture].self, forKey: .pics))
             ?? (try? container.decodeIfPresent([FeedPicture].self, forKey: .pictureURLs))
             ?? []
+        if directPictures.isEmpty {
+            let infos = (try? container.decodeIfPresent([String: FeedPictureInfo].self, forKey: .pictureInfos)) ?? [:]
+            let declaredIDs = (try? container.decodeIfPresent([String].self, forKey: .pictureIDs)) ?? []
+            let orderedIDs = declaredIDs.isEmpty ? infos.keys.sorted() : declaredIDs
+            pictures = orderedIDs.map { id in
+                let info = infos[id]
+                return FeedPicture(id: info?.id ?? id, url: info?.preferredURL)
+            }
+        } else {
+            pictures = directPictures
+        }
+        // 业务上，转发微博本身也是一条微博
         repostStorage = try? container.decodeIfPresent(FeedItemRepost.self, forKey: .repost)
         card = try? container.decodeIfPresent(FeedCard.self, forKey: .card)
         tags = (try? container.decodeIfPresent([FeedTag].self, forKey: .tags)) ?? []

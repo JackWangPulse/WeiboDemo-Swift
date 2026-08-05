@@ -4,6 +4,7 @@ public struct FeedTextParser: Sendable {
     public init() {}
 
     public func parse(_ source: String) -> ParsedFeedText {
+        // 外层是记录解析耗时
         FeedSignpost.measure(.parse) { parseUninstrumented(source) }
     }
 
@@ -11,16 +12,18 @@ public struct FeedTextParser: Sendable {
         guard !source.isEmpty else { return ParsedFeedText(source: source, spans: []) }
 
         var accepted: [FeedTextSpan] = []
+        // 先寻找四类特殊内容 解析优先级 链接 话题 @用户 表情
         for candidates in [links(in: source), topics(in: source), mentions(in: source), emoticons(in: source)] {
             for candidate in candidates where !accepted.contains(where: { $0.range.overlaps(candidate.range) }) {
                 accepted.append(candidate)
             }
         }
-        accepted.sort { $0.range.lowerBound < $1.range.lowerBound }
+        accepted.sort { $0.range.lowerBound < $1.range.lowerBound } // 找到特殊片段后，按位置排序
 
         var spans: [FeedTextSpan] = []
         var cursor = source.startIndex
         for match in accepted {
+            // 补充空隙
             if cursor < match.range.lowerBound {
                 spans.append(FeedTextSpan(kind: .plain, range: cursor..<match.range.lowerBound))
             }
@@ -70,6 +73,7 @@ public struct FeedTextParser: Sendable {
     }
 
     private func mentions(in source: String) -> [FeedTextSpan] {
+        // 发现 @ 后，继续读取 字母 下划线 数字 中文
         matches(in: source, startsWith: { $0.first == "@" }) { start, source in
             let nameStart = source.index(after: start)
             var end = nameStart
@@ -86,6 +90,7 @@ public struct FeedTextParser: Sendable {
     }
 
     private func emoticons(in source: String) -> [FeedTextSpan] {
+        // 这一层只识别语法。 它不在这里加载图片，也不判断资源是否存在。后面 Layout 阶段才会
         matches(in: source, startsWith: { $0.first == "[" }) { start, source in
             let nameStart = source.index(after: start)
             guard nameStart < source.endIndex,

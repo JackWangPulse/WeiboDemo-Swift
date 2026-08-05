@@ -68,6 +68,28 @@ final class FeedCellReuseTests: XCTestCase {
         XCTAssertTrue(toolbarElement.accessibilityTraits.contains(.button))
     }
 
+    func testMediaTapRoutesGalleryAndSelectedIndex() async throws {
+        let entry = try await makeEntry(id: "media", text: "body", pictures: 2)
+        let view = FeedContentView()
+        var actions: [FeedAction] = []
+        view.onAction = { actions.append($0) }
+        view.apply(entry)
+
+        let secondFrame = try XCTUnwrap(entry.layout.mediaFrames.dropFirst().first)
+        let point = secondFrame.center
+        view.beginInteraction(at: point)
+        view.endInteraction(at: point)
+
+        guard case let .media(urls, index) = try XCTUnwrap(actions.first) else {
+            return XCTFail("Expected media action")
+        }
+        XCTAssertEqual(index, 1)
+        XCTAssertEqual(urls.map(\.absoluteString), [
+            "https://example.com/picture-media.png",
+            "https://example.com/picture-media.png",
+        ])
+    }
+
     func testReplacementAndReuseCancelPendingInteraction() async throws {
         let a = try await makeEntry(id: "A", text: "#same#", pictures: 0), b = try await makeEntry(id: "B", text: "#same#", pictures: 0)
         let view = FeedContentView(); var actions: [FeedAction] = []; view.onAction = { actions.append($0) }
@@ -108,7 +130,7 @@ final class FeedCellReuseTests: XCTestCase {
             let image = try XCTUnwrap(commits[region], "missing \(region)")
             XCTAssertTrue(image.hasPixelVariation, "\(region) must draw visible pixels inside its bitmap")
         }
-        XCTAssertTrue(try XCTUnwrap(commits[.toolbar]).lastBitmapRowHasInk, "toolbar separator must occupy the UIKit top edge")
+        XCTAssertTrue(try XCTUnwrap(commits[.toolbar]).firstBitmapRowHasInk, "toolbar separator must occupy the UIKit top edge")
     }
 
     func testCellReplacementCancelsBlockedADrawsBeforeBCommits() async throws {
@@ -233,10 +255,9 @@ private extension CGImage {
         guard let data = dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
         return stride(from: 3, to: CFDataGetLength(data), by: 4).contains { bytes[$0] != 0 }
     }
-    var lastBitmapRowHasInk: Bool {
+    var firstBitmapRowHasInk: Bool {
         guard let data = dataProvider?.data, let bytes = CFDataGetBytePtr(data) else { return false }
-        let start = max(0, CFDataGetLength(data) - bytesPerRow)
-        return (start..<CFDataGetLength(data)).contains { bytes[$0] != 0 }
+        return (0..<min(bytesPerRow, CFDataGetLength(data))).contains { bytes[$0] != 0 }
     }
 }
 

@@ -1,6 +1,18 @@
 import CoreText
 import UIKit
 
+/*
+ FeedContentView
+ ├── profileLayer：名称、时间、来源
+ ├── bodyLayer：正文
+ ├── repostLayer：转发背景和转发正文
+ ├── cardLayer：链接卡片
+ ├── tagLayer：标签
+ ├── toolbarLayer：转发、评论、点赞
+ ├── imageLayers：头像和微博图片
+ └── highlightLayer：点击高亮
+*/
+
 @MainActor
 public final class FeedContentView: UIView {
     let profileLayer: AsyncRenderLayer
@@ -59,6 +71,7 @@ public final class FeedContentView: UIView {
         self.entry = entry
         let layout = entry.layout
         backgroundColor = UIColor(cgColor: layout.identity.environment.palette.background.cgColor)
+        // 它直接使用 LayoutEngine 的结果
         frame.size.height = layout.height
         profileLayer.frame = layout.profile.frame
         bodyLayer.frame = layout.body.bounds
@@ -66,9 +79,9 @@ public final class FeedContentView: UIView {
         cardLayer.frame = layout.card?.frame ?? .zero
         tagLayer.frame = layout.tag?.frame ?? .zero
         toolbarLayer.frame = layout.toolbar.frame
-        rebuildImageLayers(entry)
-        configureProfileDecorations(entry)
-        interactionRegions = Self.regions(layout)
+        rebuildImageLayers(entry) // 重建图片 Layer 为每张图片创建 CALayer
+        configureProfileDecorations(entry) // 配置 头像右下角认证标志 名字后面的会员钻石或等级图标
+        interactionRegions = Self.mediaRegions(entry) + Self.regions(layout) // 图片点击优先于其他覆盖区域
         rebuildAccessibility(entry)
     }
 
@@ -171,7 +184,14 @@ public final class FeedContentView: UIView {
         if let repost = entry.layout.repost { frames += repost.mediaFrames; if let image = repost.card?.imageFrame { frames.append(image) } }
         if let image = entry.layout.card?.imageFrame { frames.append(image) }
         imageLayers = frames.map { frame in
-            let node = CALayer(); node.frame = frame; node.contentsGravity = .resizeAspectFill; node.masksToBounds = true; node.backgroundColor = UIColor.systemGray5.cgColor; layer.addSublayer(node); return node
+            let node = CALayer()
+            node.frame = frame
+            node.contentsScale = CGFloat(max(entry.layout.identity.environment.displayScale, 1))
+            node.contentsGravity = .resizeAspectFill
+            node.masksToBounds = true
+            node.backgroundColor = UIColor.systemGray5.cgColor
+            layer.addSublayer(node)
+            return node
         }
         if let avatarLayer = imageLayers.first {
             avatarLayer.cornerRadius = entry.layout.profile.avatarFrame.width / 2
@@ -240,10 +260,6 @@ public final class FeedContentView: UIView {
             }
         }
         for region in interactionRegions { append(label: region.accessibilityLabel, frame: region.rects.reduce(.null) { $0.union($1) }, action: region.action) }
-        for (index, frame) in entry.layout.mediaFrames.enumerated() { append(label: "Media \(index + 1)", frame: frame, traits: .image) }
-        if let repost = entry.layout.repost {
-            for (index, frame) in repost.mediaFrames.enumerated() { append(label: "Repost media \(index + 1)", frame: frame, traits: .image) }
-        }
         elements.sort {
             if $0.accessibilityFrameInContainerSpace.minY != $1.accessibilityFrameInContainerSpace.minY {
                 return $0.accessibilityFrameInContainerSpace.minY < $1.accessibilityFrameInContainerSpace.minY
@@ -269,7 +285,18 @@ public final class FeedContentView: UIView {
     }
     private static func fill(_ context: CGContext, size: CGSize, color: (CGFloat, CGFloat, CGFloat, CGFloat)) { context.setFillColor(red: color.0, green: color.1, blue: color.2, alpha: color.3); context.fill(CGRect(origin: .zero, size: size)) }
     private static func fill(_ context: CGContext, size: CGSize, color: FeedRGBA) { context.setFillColor(color.cgColor); context.fill(CGRect(origin: .zero, size: size)) }
-    private static func strokeSeparator(_ context: CGContext, globalY: CGFloat, region: CGRect, color: FeedRGBA) { context.setStrokeColor(color.cgColor); context.move(to: CGPoint(x: 0, y: region.height - (globalY - region.minY))); context.addLine(to: CGPoint(x: region.width, y: region.height - (globalY - region.minY))); context.strokePath() }
+    private static func strokeSeparator(_ context: CGContext, globalY: CGFloat, region: CGRect, color: FeedRGBA) {
+        let scale = max(abs(context.ctm.a), 1)
+        let localY = region.height - (globalY - region.minY)
+        let pixelHeight = 1 / scale
+        // A filled physical-pixel row is deterministic at bitmap boundaries;
+        // a stroked path centered on the boundary would be half clipped.
+        let pixelAlignedY = min(max(localY - pixelHeight, 0), region.height - pixelHeight)
+        context.saveGState()
+        context.setFillColor(color.cgColor)
+        context.fill(CGRect(x: 0, y: pixelAlignedY, width: region.width, height: pixelHeight))
+        context.restoreGState()
+    }
     private static func drawImage(_ image: CGImage, frame: CGRect, context: CGContext) {
         context.saveGState()
         context.translateBy(x: 0, y: frame.minY * 2 + frame.height)
@@ -281,6 +308,28 @@ public final class FeedContentView: UIView {
         var result = layout.profile.regions + layout.body.regions
         if let repost = layout.repost { result += repost.body.regions + (repost.card?.regions ?? []) }
         result += layout.card?.regions ?? []; result += layout.tag?.regions ?? []; result += layout.toolbar.regions
+        return result
+    }
+
+    private static func mediaRegions(_ entry: PreparedFeedEntry) -> [InteractionRegion] {
+        func make(pictures: [FeedPicture], frames: [CGRect], labelPrefix: String) -> [InteractionRegion] {
+            let available = zip(pictures, frames).compactMap { picture, frame in
+                picture.url.map { (url: $0, frame: frame) }
+            }
+            let urls = available.map(\.url)
+            return available.enumerated().map { index, value in
+                InteractionRegion(
+                    rects: [value.frame],
+                    action: .media(urls: urls, index: index),
+                    accessibilityLabel: "\(labelPrefix) \(index + 1) of \(urls.count)"
+                )
+            }
+        }
+
+        var result = make(pictures: entry.item.pictures, frames: entry.layout.mediaFrames, labelPrefix: "Media")
+        if let repost = entry.item.repost, let repostLayout = entry.layout.repost {
+            result += make(pictures: repost.pictures, frames: repostLayout.mediaFrames, labelPrefix: "Repost media")
+        }
         return result
     }
 }

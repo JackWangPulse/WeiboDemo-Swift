@@ -19,7 +19,8 @@ private actor FeedReprepareWorker {
             parsedBody: parsed,
             parsedRepost: parsedRepost,
             environment: record.expectedLayoutIdentity.environment,
-            maximumBodyLines: record.maximumBodyLines
+            maximumBodyLines: record.maximumBodyLines,
+            maximumRepostLines: record.maximumRepostLines
         )
         try Task.checkCancellation()
         return PreparedFeedEntry(item: record.item, identity: record.identity, parsed: parsed, parsedRepost: parsedRepost, layout: layout)
@@ -52,9 +53,16 @@ final class FeedReprepareExecutor {
 
     @discardableResult
     func submit(index: Int, record: FeedTimelineStore.Record, priority: FeedPreparationPriority, completion: @escaping Completion) -> Bool {
-        guard pending[index] == nil, running[index] == nil, occupiedCountForTesting < capacity else { return false }
+        guard pending[index] == nil else { return false }
         let token = UUID()
-        pending[index] = Pending(token: token, index: index, record: record, priority: priority, completion: completion)
+        let replacement = Pending(token: token, index: index, record: record, priority: priority, completion: completion)
+        if let running = running[index] {
+            guard running.task.isCancelled else { return false }
+            pending[index] = replacement
+            return true
+        }
+        guard occupiedCountForTesting < capacity else { return false }
+        pending[index] = replacement
         schedule()
         return true
     }

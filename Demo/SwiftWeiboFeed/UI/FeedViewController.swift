@@ -1,5 +1,6 @@
 import UIKit
 
+// 表示这个类的状态和方法默认在主线程访问 解决的是 App 启动后，微博数据怎样进入 UITableView
 @MainActor
 final class FeedViewController: UIViewController {
     private let tableView = UITableView(frame: .zero, style: .plain)
@@ -12,7 +13,7 @@ final class FeedViewController: UIViewController {
     private var loadTask: Task<Void, Never>?
     private var preparedEnvironment: FeedLayoutEnvironment?
     private var previousContentOffsetY: CGFloat = 0
-    private lazy var reprepareExecutor = FeedReprepareExecutor(capacity: 16, concurrency: 2)
+    private lazy var reprepareExecutor = FeedReprepareExecutor(capacity: 16, concurrency: 2)  // 控制后台任务数量 为了防止快速滚动时创建几百个布局任务
 
     init(repository: FeedRepository = FeedRepository(), imagePipeline: any ImagePipeline = SystemImagePipeline()) {
         self.repository = repository
@@ -23,20 +24,21 @@ final class FeedViewController: UIViewController {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    override func viewDidLoad() {
+    override func viewDidLoad() {  // 只加载一次
         super.viewDidLoad()
         view.backgroundColor = .systemGroupedBackground
         tableView.backgroundColor = .systemGroupedBackground
         tableView.separatorStyle = .none
-        tableView.register(FeedCell.self, forCellReuseIdentifier: "FeedCell")
-        tableView.dataSource = self
-        tableView.delegate = self
-        tableView.prefetchDataSource = self
+        tableView.register(FeedCell.self, forCellReuseIdentifier: "FeedCell") // 注册可复用 Cell
+        tableView.dataSource = self // 有多少行、每行显示什么
+        tableView.delegate = self // 高度、点击和滚动事件
+        tableView.prefetchDataSource = self // 高度、点击和滚动事件
         tableView.contentInsetAdjustmentBehavior = .always
         view.addSubview(tableView)
     }
 
     override func viewDidLayoutSubviews() {
+        // 必须先得到真实屏幕宽度，才能计算 Cell Layout。
         super.viewDidLayoutSubviews()
         tableView.frame = view.bounds
         prepareForCurrentEnvironmentIfNeeded()
@@ -54,6 +56,7 @@ final class FeedViewController: UIViewController {
         Task { @MainActor [weak self] in await self?.handleMemoryPressure() }
     }
 
+    // 布局环境快照 屏幕宽度 屏幕缩放 字体大小类型 深浅色主题
     private func layoutEnvironment() -> FeedLayoutEnvironment {
         FeedLayoutEnvironment.resolve(
             width: view.bounds.width,
@@ -64,19 +67,41 @@ final class FeedViewController: UIViewController {
         )
     }
 
+    // 每次布局后检查环境，只有影响 Cell Layout 的环境真正变化时才重新准备。
     private func prepareForCurrentEnvironmentIfNeeded() {
         let environment = layoutEnvironment()
+        // 防止重复准备
         guard environment.containerPixelWidth > 0, environment != preparedEnvironment else { return }
         preparedEnvironment = environment
         prepareTimeline(environment: environment)
     }
 
+    // 数据加载的真正入口
     private func prepareTimeline(environment: FeedLayoutEnvironment) {
+        // 首先取消上一次任务
+        // ex: 正在为竖屏计算 Layout
+        //     → 用户旋转成横屏
+        //     → 取消旧任务
         loadTask?.cancel()
         cancelAllRepreparation()
         navigationItem.prompt = timelineStore.count == 0 ? "Preparing 500 exact layouts…" : nil
         let repository = repository
-        let resourceURLs = (0..<8).compactMap { Bundle.main.url(forResource: "weibo_\($0)", withExtension: "json") }
+        let resourceURLs = (0..<8).compactMap { Bundle.main.url(forResource: "weibo_\($0)", withExtension: "json") } // 找到原 Demo 的八个 JSON 文件 微博数据
+        // FeedViewController 是 @MainActor，但读取八个 JSON 文件不能放在主线程。
+        // 当前异步任务先暂停，主线程可以继续处理动画、触摸和刷新；后台完成后再恢复。
+        /*
+         主线程
+           创建 Task
+               ↓
+         Task.detached 后台线程
+           读取文件
+           JSONSerialization
+           JSONDecoder
+           扩展到 500 条
+               ↓
+         await .value
+           把结果交回调用流程
+        */
         loadTask = Task { [weak self] in
             do {
                 guard resourceURLs.count == 8 else { throw CocoaError(.fileNoSuchFile) }
@@ -84,11 +109,16 @@ final class FeedViewController: UIViewController {
                     try Self.loadDemoPage(resourceURLs: resourceURLs, minimumCount: 500)
                 }.value
                 try Task.checkCancellation()
-                let publication = try await repository.apply(page: page, environment: environment)
+                let publication = try await repository.apply(page: page, environment: environment) // Repository 会为每一条微博执行 解析正文 解析转发正文 计算 Layout 生成 PreparedFeedEntry
                 try Task.checkCancellation()
-                guard let snapshot = await repository.transferPreparedEntries(matching: publication.token, environment: environment) else { throw CancellationError() }
+                guard let snapshot = await repository.transferPreparedEntries(matching: publication.token, environment: environment) else { throw CancellationError() } // 这个完成结果是否仍然属于当前最新的一次请求？
                 guard let self, self.preparedEnvironment == environment else { return }
                 let isInitialLoad = self.timelineStore.count == 0
+                // 上面 Repository 完成准备
+                // → 更新 TimelineStore
+                // → 保存 LayoutCache
+                // → 告诉预取器新数据
+                // → reloadData
                 self.timelineStore.replace(with: snapshot)
                 for entry in snapshot { self.layoutCache.insert(entry.layout, cost: max(1, Int(entry.layout.height * CGFloat(environment.containerPixelWidth)))) }
                 self.requestedIndexes.removeAll()
@@ -118,8 +148,9 @@ final class FeedViewController: UIViewController {
         }
     }
 
+    // 强制检查自己不在主线程 nonisolated 表示这个方法不受 FeedViewController 的 MainActor 隔离约束。
     nonisolated static func loadDemoPage(resourceURLs: [URL], minimumCount: Int) throws -> FeedPage {
-        precondition(!Thread.isMainThread, "Bundled JSON I/O and decoding must stay off-main")
+        precondition(!Thread.isMainThread, "Bundled JSON I/O and decoding must stay off-main") // 如果未来有人误把它放回主线程，Debug 运行时会直接暴露问题。
         var originals = [[String: Any]]()
         for url in resourceURLs {
             let data = try Data(contentsOf: url, options: .mappedIfSafe)
@@ -132,11 +163,11 @@ final class FeedViewController: UIViewController {
         var statuses = [[String: Any]]()
         statuses.reserveCapacity(max(minimumCount, originals.count))
         var ordinal = 0
-        while statuses.count < minimumCount {
+        while statuses.count < minimumCount {  // 原 Demo 数据数量不足以稳定测试长列表性能，所以复制微博到至少 500 条。
             for original in originals where statuses.count < minimumCount {
                 var copy = original
                 let sourceID = String(describing: original["idstr"] ?? original["id"] ?? ordinal)
-                let derivedID = "\(sourceID)-demo-\(ordinal)"
+                let derivedID = "\(sourceID)-demo-\(ordinal)" // 每个副本必须生成新的 ID
                 copy["id"] = derivedID
                 copy["idstr"] = derivedID
                 copy["mid"] = derivedID
@@ -225,10 +256,10 @@ extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
         reprepareExecutor.submit(index: index, record: record, priority: priority) { [weak self] index, generation, result in
             guard let self, case let .success(entry) = result,
                   self.timelineStore.install(entry, at: index, generation: generation) else { return }
-                self.tableView.performBatchUpdates(nil)
-                if let cell = self.tableView.cellForRow(at: IndexPath(row: index, section: 0)) as? FeedCell {
-                    cell.apply(entry, pipeline: self.imagePipeline)
-                }
+            let indexPath = IndexPath(row: index, section: 0)
+            guard self.tableView.numberOfSections > 0,
+                  self.tableView.numberOfRows(inSection: 0) > index else { return }
+            self.tableView.reloadRows(at: [indexPath], with: .none)
         }
     }
 
@@ -255,6 +286,18 @@ extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
             showActionDetail(title: "Topic", detail: topic)
         case let .tag(tag):
             showActionDetail(title: "Tag", detail: tag)
+        case let .media(urls, index):
+            guard urls.indices.contains(index) else { return }
+            let controller = FeedImagePreviewController(
+                urls: urls,
+                initialIndex: index,
+                imagePipeline: imagePipeline
+            )
+            if let navigationController {
+                navigationController.pushViewController(controller, animated: true)
+            } else {
+                present(UINavigationController(rootViewController: controller), animated: true)
+            }
         case .repost:
             showActionDetail(title: "Repost", detail: "Ready to repost")
         case .comment:
@@ -268,6 +311,79 @@ extension FeedViewController: UITableViewDataSource, UITableViewDelegate {
         let controller = FeedActionDetailViewController(title: title, detail: detail)
         if let navigationController { navigationController.pushViewController(controller, animated: true) }
         else { present(UINavigationController(rootViewController: controller), animated: true) }
+    }
+}
+
+@MainActor
+private final class FeedImagePreviewController: UIViewController {
+    private let urls: [URL]
+    private let initialIndex: Int
+    private let imagePipeline: any ImagePipeline
+    private let imageView = UIImageView()
+    private let activityIndicator = UIActivityIndicatorView(style: .large)
+    private var loadTask: Task<Void, Never>?
+
+    init(urls: [URL], initialIndex: Int, imagePipeline: any ImagePipeline) {
+        self.urls = urls
+        self.initialIndex = initialIndex
+        self.imagePipeline = imagePipeline
+        super.init(nibName: nil, bundle: nil)
+        title = urls.count > 1 ? "\(initialIndex + 1) / \(urls.count)" : "Photo"
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        imageView.contentMode = .scaleAspectFit
+        imageView.backgroundColor = .black
+        imageView.accessibilityIdentifier = "feed.imagePreview"
+        imageView.accessibilityLabel = "Full size image"
+        imageView.isAccessibilityElement = true
+        view.addSubview(imageView)
+        activityIndicator.color = .white
+        activityIndicator.hidesWhenStopped = true
+        activityIndicator.startAnimating()
+        view.addSubview(activityIndicator)
+        loadImage()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        imageView.frame = view.bounds
+        activityIndicator.center = CGPoint(x: view.bounds.midX, y: view.bounds.midY)
+    }
+
+    deinit { loadTask?.cancel() }
+
+    private func loadImage() {
+        guard urls.indices.contains(initialIndex) else { return }
+        let scale = view.window?.screen.scale ?? UIScreen.main.scale
+        let size = view.bounds.isEmpty ? UIScreen.main.bounds.size : view.bounds.size
+        let request = ImageRequest(
+            url: urls[initialIndex],
+            targetPixelSize: PixelSize(
+                width: max(1, Int((size.width * scale).rounded())),
+                height: max(1, Int((size.height * scale).rounded()))
+            ),
+            contentMode: .aspectFit,
+            processorVersion: 1
+        )
+        loadTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                let response = try await imagePipeline.image(for: request)
+                try Task.checkCancellation()
+                imageView.image = UIImage(cgImage: response.image)
+                activityIndicator.stopAnimating()
+            } catch is CancellationError {
+                return
+            } catch {
+                activityIndicator.stopAnimating()
+                imageView.accessibilityLabel = "Image failed to load"
+            }
+        }
     }
 }
 

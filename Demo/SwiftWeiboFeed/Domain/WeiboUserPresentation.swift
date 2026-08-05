@@ -6,6 +6,7 @@ enum WeiboNameBadge: Equatable, Sendable {
 }
 
 struct WeiboUserPresentation: Equatable, Sendable {
+    // 输出三个显示结果 昵称颜色 昵称右侧徽章，可能有多个 头像右下角认证图标
     let nameColor: FeedRGBA
     let nameBadges: [WeiboNameBadge]
     let avatarBadge: WeiboResource?

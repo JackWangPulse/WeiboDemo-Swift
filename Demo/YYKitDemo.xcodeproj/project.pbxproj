@@ -26,8 +26,6 @@
 		A20000000000000000000002 /* FeedModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* FeedModelsTests.swift */; };
 		A20000000000000000000003 /* FeedModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* FeedModels.swift */; };
 		A20000000000000000000004 /* FeedIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* FeedIdentity.swift */; };
-		A80000000000000000000001 /* FeedRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000011 /* FeedRepository.swift */; };
-		A80000000000000000000002 /* FeedRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000012 /* FeedRepositoryTests.swift */; };
 		A30000000000000000000001 /* FeedTextParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000011 /* FeedTextParserTests.swift */; };
 		A30000000000000000000002 /* FeedAction.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000012 /* FeedAction.swift */; };
 		A30000000000000000000003 /* ParsedFeedText.swift in Sources */ = {isa = PBXBuildFile; fileRef = A30000000000000000000013 /* ParsedFeedText.swift */; };
@@ -47,6 +45,8 @@
 		A70000000000000000000003 /* ImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000013 /* ImagePipeline.swift */; };
 		A70000000000000000000004 /* DecodedImageCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000014 /* DecodedImageCache.swift */; };
 		A70000000000000000000005 /* SystemImagePipeline.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70000000000000000000015 /* SystemImagePipeline.swift */; };
+		A80000000000000000000001 /* FeedRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000011 /* FeedRepository.swift */; };
+		A80000000000000000000002 /* FeedRepositoryTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A80000000000000000000012 /* FeedRepositoryTests.swift */; };
 		A90000000000000000000001 /* FeedContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000011 /* FeedContentView.swift */; };
 		A90000000000000000000002 /* FeedCell.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000012 /* FeedCell.swift */; };
 		A90000000000000000000003 /* FeedCellReuseTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90000000000000000000013 /* FeedCellReuseTests.swift */; };
@@ -272,6 +272,8 @@
 		A10000000000000000000016 /* SwiftWeiboFeedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftWeiboFeedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000011 /* FeedFixtureLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFixtureLoader.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* FeedModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModelsTests.swift; sourceTree = "<group>"; };
+		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
+		A20000000000000000000014 /* FeedIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedIdentity.swift; sourceTree = "<group>"; };
 		A30000000000000000000011 /* FeedTextParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedTextParserTests.swift; sourceTree = "<group>"; };
 		A30000000000000000000012 /* FeedAction.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedAction.swift; sourceTree = "<group>"; };
 		A30000000000000000000013 /* ParsedFeedText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ParsedFeedText.swift; sourceTree = "<group>"; };
@@ -291,6 +293,8 @@
 		A70000000000000000000013 /* ImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImagePipeline.swift; sourceTree = "<group>"; };
 		A70000000000000000000014 /* DecodedImageCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DecodedImageCache.swift; sourceTree = "<group>"; };
 		A70000000000000000000015 /* SystemImagePipeline.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SystemImagePipeline.swift; sourceTree = "<group>"; };
+		A80000000000000000000011 /* FeedRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepository.swift; sourceTree = "<group>"; };
+		A80000000000000000000012 /* FeedRepositoryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedRepositoryTests.swift; sourceTree = "<group>"; };
 		A90000000000000000000011 /* FeedContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedContentView.swift; sourceTree = "<group>"; };
 		A90000000000000000000012 /* FeedCell.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCell.swift; sourceTree = "<group>"; };
 		A90000000000000000000013 /* FeedCellReuseTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedCellReuseTests.swift; sourceTree = "<group>"; };
@@ -1797,7 +1801,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = SwiftWeiboFeed/Resources/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.SwiftWeiboFeed;
 				PRODUCT_MODULE_NAME = SwiftWeiboFeed;
@@ -1813,7 +1817,7 @@
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
 				INFOPLIST_FILE = SwiftWeiboFeed/Resources/Info.plist;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.SwiftWeiboFeed;
 				PRODUCT_MODULE_NAME = SwiftWeiboFeed;
@@ -1836,6 +1840,8 @@
 				PRODUCT_MODULE_NAME = SwiftWeiboFeedTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SWIFT_ENABLE_BATCH_MODE = NO;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SwiftWeiboFeed.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SwiftWeiboFeed";

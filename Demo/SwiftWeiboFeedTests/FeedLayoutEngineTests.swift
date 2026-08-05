@@ -131,7 +131,55 @@ final class FeedLayoutEngineTests: XCTestCase {
         XCTAssertFalse(layout.body.regions.contains { $0.action == .url(URL(string: "https://hidden.example.com")!) })
         let expandRect = try XCTUnwrap(layout.body.regions.last?.rects.first)
         XCTAssertTrue(layout.body.bounds.contains(expandRect))
+        XCTAssertGreaterThanOrEqual(expandRect.width, 44)
+        XCTAssertGreaterThanOrEqual(expandRect.height, 44)
         assertFinite(layout)
+    }
+
+    @MainActor
+    func testExpandingRepostUsesRepostIDAndRemovesItsLineLimit() async throws {
+        let item = try makeItem(
+            text: "Original",
+            repostText: String(repeating: "Long repost body ", count: 80)
+        )
+        let repost = try XCTUnwrap(item.repost)
+        let parsed = FeedTextParser().parse(item.text)
+        let parsedRepost = FeedTextParser().parse(repost.text)
+        let identity = contentIdentity(for: item)
+        let layout = try await FeedLayoutEngine().layout(
+            identity: identity,
+            item: item,
+            parsedBody: parsed,
+            parsedRepost: parsedRepost,
+            environment: environment()
+        )
+        let store = FeedTimelineStore()
+        store.replace(with: [PreparedFeedEntry(item: item, identity: identity, parsed: parsed, parsedRepost: parsedRepost, layout: layout)])
+
+        XCTAssertEqual(store.expand(itemID: repost.id), 0)
+        XCTAssertEqual(store.record(at: 0).maximumBodyLines, 6)
+        XCTAssertNil(store.record(at: 0).maximumRepostLines)
+
+        let expandedRecord = store.record(at: 0)
+        let expandedLayout = try await FeedLayoutEngine().layout(
+            identity: expandedRecord.identity,
+            item: item,
+            parsedBody: parsed,
+            parsedRepost: parsedRepost,
+            environment: environment(),
+            maximumBodyLines: expandedRecord.maximumBodyLines,
+            maximumRepostLines: expandedRecord.maximumRepostLines
+        )
+        let expandedEntry = PreparedFeedEntry(
+            item: item,
+            identity: expandedRecord.identity,
+            parsed: parsed,
+            parsedRepost: parsedRepost,
+            layout: expandedLayout
+        )
+        XCTAssertNil(expandedLayout.repost?.body.regions.first { $0.action == .expand(repost.id) })
+        XCTAssertGreaterThan(expandedLayout.height, layout.height)
+        XCTAssertTrue(store.install(expandedEntry, at: 0, generation: expandedRecord.generation))
     }
 
     func testForcedNewlineTruncationClipsPartialURLBeforeExactToken() async throws {

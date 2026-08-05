@@ -17,6 +17,32 @@ final class FeedModelsTests: XCTestCase {
         }
     }
 
+    func testDecodesPicInfosInPicIDOrder() throws {
+        let data = try FeedFixtureLoader.data(named: "weibo_0")
+        let page = try JSONDecoder.weibo.decode(FeedPage.self, from: data)
+
+        XCTAssertEqual(page.items[7].pictures.count, 2)
+        XCTAssertEqual(page.items[9].repost?.pictures.count, 9)
+        XCTAssertEqual(
+            page.items[9].repost?.pictures.first?.url?.absoluteString,
+            "http://ww3.sinaimg.cn/or180/648ac377gw1evvb5q5xw9j20k50qo7ar.jpg"
+        )
+        XCTAssertEqual(
+            page.items[9].repost?.pictures.map(\.id),
+            [
+                "648ac377gw1evvb5q5xw9j20k50qo7ar",
+                "648ac377gw1evvb64986kj20ke0qo79q",
+                "648ac377gw1evvb638ctyj20jg0qon80",
+                "648ac377gw1evvb5p5racj20kg0p07eo",
+                "648ac377gw1evvb61yq07j20kg0q8wqx",
+                "648ac377gw1evvb671w2nj20kg0pugvo",
+                "648ac377gw1evvb6917s9j20kg0qdwkm",
+                "648ac377gw1evvb69y6z0j20kg0ox0y5",
+                "648ac377gw1evvb6bwk53j20kg0o7q8n",
+            ]
+        )
+    }
+
     func testMissingOptionalMediaDoesNotFailItem() throws {
         let json = #"{"statuses":[{"id":1,"text":"hello","user":{"id":2,"name":"A"}}]}"#.data(using: .utf8)!
         let page = try JSONDecoder.weibo.decode(FeedPage.self, from: json)

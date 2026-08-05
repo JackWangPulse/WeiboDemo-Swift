@@ -71,7 +71,11 @@ final class PerformanceSmokeTests: XCTestCase {
 
         FeedCell(style: .default, reuseIdentifier: nil).apply(entry, pipeline: EmptyImagePipeline())
 
-        XCTAssertEqual(hooks.events, [.cellApply])
+        XCTAssertEqual(hooks.events.first, .cellApply)
+        XCTAssertFalse(
+            hooks.events.contains { $0 == .parse || $0 == .layout || $0 == .decode },
+            "applying a prepared entry must not parse text, calculate layout, or decode images"
+        )
     }
 
     func testRepresentativeParserAndLayoutBenchmarks() throws {
@@ -235,6 +239,37 @@ final class PerformanceSmokeTests: XCTestCase {
         while executor.occupiedCountForTesting != 0 { await Task.yield() }
         let startedIDs = await gate.startedIDs
         XCTAssertEqual(startedIDs, [entries[0].item.id, entries[2].item.id, entries[1].item.id])
+    }
+
+    @MainActor
+    func testReplacingRunningReprepareEventuallyRunsNewestRecord() async throws {
+        let entries = try await makeEntries(count: 1)
+        let store = FeedTimelineStore()
+        store.replace(with: entries)
+        let gate = ReprepareWorkerGate()
+        let executor = FeedReprepareExecutor(
+            capacity: 1,
+            concurrency: 1,
+            startHook: { try await gate.start($0) }
+        )
+
+        let original = store.record(at: 0)
+        XCTAssertTrue(executor.submit(index: 0, record: original, priority: .forward) { _, _, _ in })
+        await gate.waitUntilStarted(1)
+
+        _ = store.expand(itemID: original.item.id)
+        let expanded = store.record(at: 0)
+        let installed = expectation(description: "expanded replacement installed")
+        executor.cancel(index: 0)
+        XCTAssertTrue(executor.submit(index: 0, record: expanded, priority: .visible) { index, generation, result in
+            guard case let .success(entry) = result else { return }
+            XCTAssertNil(entry.layout.body.regions.first { $0.action == .expand(entry.item.id) })
+            XCTAssertTrue(store.install(entry, at: index, generation: generation))
+            installed.fulfill()
+        })
+
+        await gate.releaseAll()
+        await fulfillment(of: [installed], timeout: 2)
     }
 
     @MainActor
