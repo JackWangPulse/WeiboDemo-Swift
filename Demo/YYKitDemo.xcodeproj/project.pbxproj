@@ -1980,18 +1980,20 @@
 					"\"$(SRCROOT)/../Vendor\"",
 				);
 				GCC_OPTIMIZATION_LEVEL = 0;
+				"GCC_PREPROCESSOR_DEFINITIONS[sdk=iphonesimulator*]" = "YYIMAGE_WEBP_ENABLED=0";
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/**",
 				);
 				INFOPLIST_FILE = YYKitDemo/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 12;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/**",
 				);
 				OTHER_LDFLAGS = "-ObjC";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.ibireme.YYKitDemo";
+				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.YYKitDemo;
 				PRODUCT_NAME = YYKitDemo;
 				STRIP_PNG_TEXT = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
@@ -2012,14 +2014,16 @@
 					"$(inherited)",
 					"$(PROJECT_DIR)/**",
 				);
+				"GCC_PREPROCESSOR_DEFINITIONS[sdk=iphonesimulator*]" = "YYIMAGE_WEBP_ENABLED=0";
 				INFOPLIST_FILE = YYKitDemo/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 12;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/**",
 				);
 				OTHER_LDFLAGS = "-ObjC";
-				PRODUCT_BUNDLE_IDENTIFIER = "com.ibireme.YYKitDemo";
+				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.YYKitDemo;
 				PRODUCT_NAME = YYKitDemo;
 				STRIP_PNG_TEXT = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";

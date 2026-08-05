@@ -7,11 +7,32 @@
 //
 
 #import "YYBPGCoder.h"
+#import <TargetConditionals.h>
 #import <ImageIO/ImageIO.h>
 #import <Accelerate/Accelerate.h>
+#if !TARGET_OS_SIMULATOR
 #import <bpg/libbpg.h>
+#endif
 
 #define YY_FOUR_CC(c1,c2,c3,c4) ((uint32_t)(((c4) << 24) | ((c3) << 16) | ((c2) << 8) | (c1)))
+
+#if TARGET_OS_SIMULATOR
+
+CGImageRef YYCGImageCreateWithBPGData(CFDataRef bpgData, BOOL decodeForDisplay) {
+    return NULL;
+}
+
+CGImageRef YYCGImageCreateFrameWithBPGData(CFDataRef bpgData, NSUInteger frameIndex, BOOL decodeForDisplay) {
+    return NULL;
+}
+
+void YYCGImageDecodeAllFrameInBPGData(CFDataRef bpgData, BOOL decodeForDisplay) {}
+
+BOOL YYImageIsBPGData(CFDataRef data) {
+    return NO;
+}
+
+#else
 
 /// Returns byte-aligned size.
 static inline size_t _YYImageByteAlign(size_t size, size_t alignment) {
@@ -270,3 +291,5 @@ BOOL YYImageIsBPGData(CFDataRef data) {
     uint32_t magic = *((uint32_t *)bytes);
     return magic == YY_FOUR_CC('B', 'P', 'G', 0xFB);
 }
+
+#endif
