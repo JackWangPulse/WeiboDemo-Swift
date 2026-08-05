@@ -1,0 +1,70 @@
+name: iOS Tests
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ios-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-tests:
+    name: Unit tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16.4
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+
+      - name: Run unit tests
+        run: |
+          mkdir -p TestResults
+          xcodebuild \
+            -project Demo/YYKitDemo.xcodeproj \
+            -scheme SwiftWeiboFeed \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+            -only-testing:SwiftWeiboFeedTests \
+            -resultBundlePath TestResults/UnitTests.xcresult \
+            test
+
+      - name: Upload unit-test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: TestResults/UnitTests.xcresult
+          if-no-files-found: warn
+
+  ui-tests:
+    name: UI smoke tests
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode 16.4
+        run: sudo xcode-select --switch /Applications/Xcode_16.4.app
+
+      - name: Run UI smoke tests
+        run: |
+          mkdir -p TestResults
+          xcodebuild \
+            -project Demo/YYKitDemo.xcodeproj \
+            -scheme SwiftWeiboFeed \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=18.5' \
+            -only-testing:SwiftWeiboFeedUITests \
+            -resultBundlePath TestResults/UITests.xcresult \
+            test
+
+      - name: Upload UI-test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-test-results
+          path: TestResults/UITests.xcresult
+          if-no-files-found: warn
