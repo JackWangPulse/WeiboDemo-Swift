@@ -39,7 +39,7 @@ jobs:
           xcodebuild \
             -project Demo/YYKitDemo.xcodeproj \
             -scheme SwiftWeiboFeed \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=26.2' \
             -only-testing:SwiftWeiboFeedTests \
             -resultBundlePath TestResults/UnitTests.xcresult \
             test
@@ -80,7 +80,7 @@ jobs:
           xcodebuild \
             -project Demo/YYKitDemo.xcodeproj \
             -scheme SwiftWeiboFeed \
-            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=latest' \
+            -destination 'platform=iOS Simulator,name=iPhone 16 Pro,OS=26.2' \
             -only-testing:SwiftWeiboFeedUITests \
             -resultBundlePath TestResults/UITests.xcresult \
             test

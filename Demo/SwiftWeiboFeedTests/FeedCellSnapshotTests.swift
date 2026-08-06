@@ -17,7 +17,10 @@ final class FeedCellSnapshotTests: XCTestCase {
     func testAllIPhone11WidthCellSnapshots() async throws {
         for snapshot in FeedSnapshotCase.allCases {
             let candidate = try await render(snapshot)
-            let sourceDirectory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("SnapshotReferences")
+            let sourceDirectory = URL(fileURLWithPath: #filePath)
+                .deletingLastPathComponent()
+                .appendingPathComponent("SnapshotReferences")
+                .appendingPathComponent(Self.runtimeReferenceDirectory)
             let referenceURL = sourceDirectory.appendingPathComponent(snapshot.rawValue + ".png")
             if ProcessInfo.processInfo.environment["SWIFT_FEED_RECORD_SNAPSHOTS"] == "1" {
                 try FileManager.default.createDirectory(at: sourceDirectory, withIntermediateDirectories: true)
@@ -100,6 +103,11 @@ final class FeedCellSnapshotTests: XCTestCase {
         attachment.name = name
         attachment.lifetime = .keepAlways
         add(attachment)
+    }
+
+    private static var runtimeReferenceDirectory: String {
+        let version = ProcessInfo.processInfo.operatingSystemVersion
+        return "iOS-\(version.majorVersion).\(version.minorVersion)"
     }
 
     private static func image(bytes: [UInt8]) -> CGImage? {
