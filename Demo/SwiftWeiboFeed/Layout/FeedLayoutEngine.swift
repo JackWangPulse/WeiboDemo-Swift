@@ -31,12 +31,20 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             let cancellation = LayoutCancellation()
             let completion = LayoutCompletion<FeedItemLayout>()
             let operation = BlockOperation { [layoutStartHook] in
-                guard !cancellation.isCancelled else { return }
+                guard !cancellation.isCancelled else {
+                    completion.resume(.failure(CancellationError()))
+                    return
+                }
                 layoutStartHook?()
                 do {
                     let result = try Self.compute(item: item, identity: identity, parsedBody: parsedBody, parsedRepost: parsedRepost, environment: environment, maximumBodyLines: maximumBodyLines, maximumRepostLines: maximumRepostLines, cancellation: cancellation)
                     completion.resume(.success(result))
                 } catch { completion.resume(.failure(error)) }
+            }
+            operation.completionBlock = {
+                // OperationQueue is allowed to skip the body of an operation that
+                // was cancelled before it started. Always close the async wait.
+                completion.resume(.failure(CancellationError()))
             }
             return try await withTaskCancellationHandler {
                 try await withCheckedThrowingContinuation { continuation in
@@ -597,29 +605,40 @@ private final class LayoutCompletion<Value: Sendable>: @unchecked Sendable {
     private let lock = NSLock()
     private var continuation: CheckedContinuation<Value, Error>?
     private var pending: Result<Value, Error>?
+    private var completed = false
 
     func install(_ continuation: CheckedContinuation<Value, Error>) {
-        let result = lock.withLock { () -> Result<Value, Error>? in
-            if let pending { return pending }
+        lock.lock()
+        let result: Result<Value, Error>?
+        if let pending {
+            self.pending = nil
+            result = pending
+        } else {
             self.continuation = continuation
-            return nil
+            result = nil
         }
+        lock.unlock()
+
         if let result {
             continuation.resume(with: result)
         }
     }
 
     func resume(_ result: Result<Value, Error>) {
-        let continuation = lock.withLock { () -> CheckedContinuation<Value, Error>? in
-            guard pending == nil else { return nil }
-            guard let continuation else {
-                pending = result
-                return nil
-            }
-            self.continuation = nil
-            pending = result
-            return continuation
+        lock.lock()
+        guard !completed else {
+            lock.unlock()
+            return
         }
-        continuation?.resume(with: result)
+        completed = true
+        guard let continuation else {
+            pending = result
+            lock.unlock()
+            return
+        }
+        self.continuation = nil
+        lock.unlock()
+
+        continuation.resume(with: result)
     }
 }

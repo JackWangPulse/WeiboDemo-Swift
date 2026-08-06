@@ -244,7 +244,9 @@ final class FeedLayoutEngineTests: XCTestCase {
     func testQueuedLayoutCanBeCancelledBeforeItStarts() async throws {
         let gate = DispatchSemaphore(value: 0)
         let started = DispatchSemaphore(value: 0)
+        let startCount = LockedCounter()
         let engine = FeedLayoutEngine(layoutStartHook: {
+            startCount.increment()
             started.signal()
             gate.wait()
         })
@@ -273,6 +275,7 @@ final class FeedLayoutEngineTests: XCTestCase {
             _ = try await cancelled.value
             XCTFail("Expected cancellation")
         } catch is CancellationError {}
+        XCTAssertEqual(startCount.value, 2, "cancelled queued layout must not enter layout computation")
     }
 
     func testObservedLayoutConcurrencyNeverExceedsTwo() async throws {
@@ -515,6 +518,14 @@ private final class LockedValues<Element: Sendable>: @unchecked Sendable {
 
     var values: [Element] { lock.withLock { storage } }
     func append(_ value: Element) { lock.withLock { storage.append(value) } }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = 0
+
+    var value: Int { lock.withLock { storage } }
+    func increment() { lock.withLock { storage += 1 } }
 }
 
 private final class ConcurrencyTracker: @unchecked Sendable {

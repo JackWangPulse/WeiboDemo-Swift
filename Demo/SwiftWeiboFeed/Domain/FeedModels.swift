@@ -131,12 +131,12 @@ private struct FeedPictureInfo: Decodable {
     let original: FeedPictureVariant?
 
     var preferredURL: URL? {
-        thumbnail?.url
-            ?? bmiddle?.url
-            ?? middleplus?.url
-            ?? large?.url
-            ?? largest?.url
-            ?? original?.url
+        if let url = thumbnail?.url { return url }
+        if let url = bmiddle?.url { return url }
+        if let url = middleplus?.url { return url }
+        if let url = large?.url { return url }
+        if let url = largest?.url { return url }
+        return original?.url
     }
 
     private enum CodingKeys: String, CodingKey {
