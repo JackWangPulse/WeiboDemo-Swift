@@ -4,6 +4,7 @@ enabledWorkflows:
   - simulator
   - simulator-management
   - ui-automation
+  - device
 
 sessionDefaults:
   projectPath: "./YYKitDemo.xcodeproj"

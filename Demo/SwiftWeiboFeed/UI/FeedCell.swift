@@ -64,6 +64,18 @@ public final class FeedCell: UITableViewCell { // FeedCell 本身并不负责具
         }
     }
 
+    /// Updates an expanded body for the currently represented feed. Image tasks,
+    /// decoded contents, and unchanged render layers deliberately stay alive.
+    func applyIncremental(_ entry: PreparedFeedEntry, expandedItemID: FeedID) {
+        guard representedID == entry.item.id else { return }
+        let interval = FeedSignpost.begin(.cellApply)
+        defer { interval.end() }
+        contentNode.frame = CGRect(x: 0, y: 0, width: entry.layout.profile.frame.width, height: entry.layout.height)
+        contentNode.applyIncremental(entry)
+        let scale = CGFloat(max(entry.layout.identity.environment.displayScale, 1))
+        contentNode.displayIncremental(entry: entry, expandedItemID: expandedItemID, generation: generation, scale: scale)
+    }
+
     func applyPlaceholder(identity: FeedContentIdentity, height: CGFloat, width: CGFloat) {
         cancelImageTasks(); contentNode.clear(); generation &+= 1; representedID = identity.itemID
         contentNode.frame = CGRect(x: 0, y: 0, width: width, height: height)

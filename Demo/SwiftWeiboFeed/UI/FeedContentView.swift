@@ -16,8 +16,13 @@ import UIKit
 @MainActor
 public final class FeedContentView: UIView {
     let profileLayer: AsyncRenderLayer
-    let bodyLayer: AsyncRenderLayer
-    let repostLayer: AsyncRenderLayer
+    let bodyLayer = CALayer()
+    let bodyStableLayer: AsyncRenderLayer
+    let bodyTailLayer: AsyncRenderLayer
+    let repostLayer = CALayer()
+    let repostStableLayer: AsyncRenderLayer
+    let repostTailLayer: AsyncRenderLayer
+    let repostCardLayer: AsyncRenderLayer
     let cardLayer: AsyncRenderLayer
     let tagLayer: AsyncRenderLayer
     let toolbarLayer: AsyncRenderLayer
@@ -44,13 +49,17 @@ public final class FeedContentView: UIView {
         resourceProvider: any WeiboResourceProviding = WeiboResourceProvider.shared,
         layerFactory: () -> AsyncRenderLayer
     ) {
-        profileLayer = layerFactory(); bodyLayer = layerFactory(); repostLayer = layerFactory()
+        profileLayer = layerFactory()
+        bodyStableLayer = layerFactory(); bodyTailLayer = layerFactory()
+        repostStableLayer = layerFactory(); repostTailLayer = layerFactory(); repostCardLayer = layerFactory()
         cardLayer = layerFactory(); tagLayer = layerFactory(); toolbarLayer = layerFactory()
         self.resourceProvider = resourceProvider
         super.init(frame: frame)
         isAccessibilityElement = false
         isOpaque = true
-        for node in [profileLayer, bodyLayer, repostLayer, cardLayer, tagLayer, toolbarLayer] {
+        layer.addSublayer(bodyLayer)
+        layer.addSublayer(repostLayer)
+        for node in [profileLayer, bodyStableLayer, bodyTailLayer, repostStableLayer, repostTailLayer, repostCardLayer, cardLayer, tagLayer, toolbarLayer] {
             node.contentsGravity = .topLeft
             layer.addSublayer(node)
         }
@@ -79,9 +88,32 @@ public final class FeedContentView: UIView {
         cardLayer.frame = layout.card?.frame ?? .zero
         tagLayer.frame = layout.tag?.frame ?? .zero
         toolbarLayer.frame = layout.toolbar.frame
+        updateTextLayerFrames(layout)
+        repostLayer.backgroundColor = layout.repost == nil ? nil : layout.identity.environment.palette.repostBackground.cgColor
         rebuildImageLayers(entry) // 重建图片 Layer 为每张图片创建 CALayer
         configureProfileDecorations(entry) // 配置 头像右下角认证标志 名字后面的会员钻石或等级图标
         interactionRegions = Self.mediaRegions(entry) + Self.regions(layout) // 图片点击优先于其他覆盖区域
+        rebuildAccessibility(entry)
+    }
+
+    /// Applies an expanded layout for the same feed without disturbing stable
+    /// bitmaps or image subscriptions.
+    func applyIncremental(_ entry: PreparedFeedEntry) {
+        guard self.entry?.item.id == entry.item.id else { apply(entry); return }
+        cancelInteraction()
+        self.entry = entry
+        let layout = entry.layout
+        frame.size.height = layout.height
+        profileLayer.frame = layout.profile.frame
+        bodyLayer.frame = layout.body.bounds
+        repostLayer.frame = layout.repost?.frame ?? .zero
+        cardLayer.frame = layout.card?.frame ?? .zero
+        tagLayer.frame = layout.tag?.frame ?? .zero
+        toolbarLayer.frame = layout.toolbar.frame
+        updateTextLayerFrames(layout)
+        repostLayer.backgroundColor = layout.repost == nil ? nil : layout.identity.environment.palette.repostBackground.cgColor
+        updateImageLayerFrames(entry)
+        interactionRegions = Self.mediaRegions(entry) + Self.regions(layout)
         rebuildAccessibility(entry)
     }
 
@@ -99,12 +131,16 @@ public final class FeedContentView: UIView {
                 Self.drawImage(moreImage, frame: CGRect(x: layout.profile.frame.width - 32, y: 10, width: 20, height: 20), context: context)
             }
         }
-        display(bodyLayer, frame: layout.body.bounds, identity: identity(entry, .body, generation), scale: scale) { Self.draw(layout.body, in: $0, region: layout.body.bounds, token: $1) }
+        displayText(layout.body.stablePrefixFragment, on: bodyStableLayer, entry: entry, region: .bodyStable, generation: generation, scale: scale)
+        displayText(layout.body.mutableTailFragment, on: bodyTailLayer, entry: entry, region: .body, generation: generation, scale: scale)
         if let repost = layout.repost {
-            display(repostLayer, frame: repost.frame, identity: identity(entry, .repost, generation), scale: scale) { context, token in
-                Self.fill(context, size: repost.frame.size, color: palette.repostBackground)
-                Self.draw(repost.body, in: context, region: repost.frame, token: token)
-                if let card = repost.card { Self.strokeSeparator(context, globalY: card.frame.minY, region: repost.frame, color: palette.separator); Self.draw(card.text, in: context, region: repost.frame, token: token) }
+            displayText(repost.body.stablePrefixFragment, on: repostStableLayer, entry: entry, region: .repostStable, generation: generation, scale: scale)
+            displayText(repost.body.mutableTailFragment, on: repostTailLayer, entry: entry, region: .repost, generation: generation, scale: scale)
+            if let repostCard = repost.card {
+                display(repostCardLayer, frame: repostCard.frame, identity: identity(entry, .repostCard, generation), scale: scale) { context, token in
+                    Self.strokeSeparator(context, globalY: repostCard.frame.minY, region: repostCard.frame, color: palette.separator)
+                    Self.draw(repostCard.text, in: context, region: repostCard.frame, token: token)
+                }
             }
         }
         if let card = layout.card { display(cardLayer, frame: card.frame, identity: identity(entry, .card, generation), scale: scale) { context, token in Self.fill(context, size: card.frame.size, color: palette.repostBackground); Self.strokeSeparator(context, globalY: card.frame.minY, region: card.frame, color: palette.separator); Self.draw(card.text, in: context, region: card.frame, token: token) } }
@@ -119,6 +155,14 @@ public final class FeedContentView: UIView {
                 }
                 Self.draw(item.count, in: context, region: layout.toolbar.frame, token: token)
             }
+        }
+    }
+
+    func displayIncremental(entry: PreparedFeedEntry, expandedItemID: FeedID, generation: UInt, scale: CGFloat) {
+        if entry.item.id == expandedItemID {
+            displayText(entry.layout.body.mutableTailFragment, on: bodyTailLayer, entry: entry, region: .body, generation: generation, scale: scale)
+        } else if let repost = entry.layout.repost, entry.item.repost?.id == expandedItemID {
+            displayText(repost.body.mutableTailFragment, on: repostTailLayer, entry: entry, region: .repost, generation: generation, scale: scale)
         }
     }
 
@@ -141,7 +185,8 @@ public final class FeedContentView: UIView {
         cancelInteraction()
         entry = nil; interactionRegions = []; accessibilityElements = nil
         cancelRendering()
-        for node in [profileLayer, bodyLayer, repostLayer, cardLayer, tagLayer, toolbarLayer] { node.frame = .zero }
+        for node in [profileLayer, bodyStableLayer, bodyTailLayer, repostStableLayer, repostTailLayer, repostCardLayer, cardLayer, tagLayer, toolbarLayer] { node.frame = .zero }
+        bodyLayer.frame = .zero; repostLayer.frame = .zero; repostLayer.backgroundColor = nil
         imageLayers.forEach { $0.contents = nil; $0.removeFromSuperlayer() }
         imageLayers.removeAll(); mediaLayers.removeAll()
         avatarBadgeLayer.contents = nil; avatarBadgeLayer.frame = .zero
@@ -150,7 +195,7 @@ public final class FeedContentView: UIView {
     }
 
     func cancelRendering() {
-        for node in [profileLayer, bodyLayer, repostLayer, cardLayer, tagLayer, toolbarLayer] {
+        for node in [profileLayer, bodyStableLayer, bodyTailLayer, repostStableLayer, repostTailLayer, repostCardLayer, cardLayer, tagLayer, toolbarLayer] {
             node.cancelDisplay()
             node.contents = nil
         }
@@ -202,6 +247,20 @@ public final class FeedContentView: UIView {
         mediaLayers = Array(imageLayers.dropFirst().prefix(mediaCount))
         layer.addSublayer(highlightLayer)
         layer.addSublayer(avatarBadgeLayer)
+    }
+
+    private func updateImageLayerFrames(_ entry: PreparedFeedEntry) {
+        var frames = [entry.layout.profile.avatarFrame] + entry.layout.mediaFrames
+        if let repost = entry.layout.repost {
+            frames += repost.mediaFrames
+            if let image = repost.card?.imageFrame { frames.append(image) }
+        }
+        if let image = entry.layout.card?.imageFrame { frames.append(image) }
+        guard frames.count == imageLayers.count else {
+            rebuildImageLayers(entry)
+            return
+        }
+        for (node, frame) in zip(imageLayers, frames) { node.frame = frame }
     }
 
     private func configureProfileDecorations(_ entry: PreparedFeedEntry) {
@@ -274,6 +333,12 @@ public final class FeedContentView: UIView {
     }
 
     private func identity(_ entry: PreparedFeedEntry, _ region: RenderRegion, _ generation: UInt) -> RenderIdentity { RenderIdentity(layout: entry.layout.identity, region: region, generation: generation) }
+    private func displayText(_ fragment: TextRenderFragment?, on node: AsyncRenderLayer, entry: PreparedFeedEntry, region: RenderRegion, generation: UInt, scale: CGFloat) {
+        guard let fragment, !fragment.bounds.isEmpty else { node.cancelDisplay(); node.contents = nil; node.frame = .zero; return }
+        display(node, frame: fragment.bounds, identity: identity(entry, region, generation), scale: scale) {
+            Self.draw(fragment, in: $0, token: $1)
+        }
+    }
     private func display(_ node: AsyncRenderLayer, frame: CGRect, identity: RenderIdentity, scale: CGFloat, draw: @escaping (CGContext, DisplayCancellationToken) -> Void) {
         guard !frame.isEmpty else { node.cancelDisplay(); node.contents = nil; return }
         node.display(AsyncDisplayTask(identity: identity, size: frame.size, scale: scale, draw: draw))
@@ -286,6 +351,32 @@ public final class FeedContentView: UIView {
             context.draw(attachment.image, in: local)
         }
         context.restoreGState()
+    }
+    static func draw(_ fragment: TextRenderFragment, in context: CGContext, token: DisplayCancellationToken) {
+        context.saveGState(); context.textMatrix = .identity
+        for (line, origin) in zip(fragment.storage.lines, fragment.storage.origins) {
+            guard !token.isCancelled else { break }
+            context.textPosition = CGPoint(x: origin.x - fragment.bounds.minX, y: fragment.bounds.height - (origin.y - fragment.bounds.minY))
+            CTLineDraw(line, context)
+        }
+        for attachment in fragment.attachments where !token.isCancelled {
+            let local = CGRect(
+                x: attachment.frame.minX - fragment.bounds.minX,
+                y: fragment.bounds.height - (attachment.frame.maxY - fragment.bounds.minY),
+                width: attachment.frame.width,
+                height: attachment.frame.height
+            )
+            context.draw(attachment.image, in: local)
+        }
+        context.restoreGState()
+    }
+
+    private func updateTextLayerFrames(_ layout: FeedItemLayout) {
+        bodyStableLayer.frame = layout.body.stablePrefixFragment?.bounds ?? .zero
+        bodyTailLayer.frame = layout.body.mutableTailFragment.bounds
+        repostStableLayer.frame = layout.repost?.body.stablePrefixFragment?.bounds ?? .zero
+        repostTailLayer.frame = layout.repost?.body.mutableTailFragment.bounds ?? .zero
+        repostCardLayer.frame = layout.repost?.card?.frame ?? .zero
     }
     private static func fill(_ context: CGContext, size: CGSize, color: (CGFloat, CGFloat, CGFloat, CGFloat)) { context.setFillColor(red: color.0, green: color.1, blue: color.2, alpha: color.3); context.fill(CGRect(origin: .zero, size: size)) }
     private static func fill(_ context: CGContext, size: CGSize, color: FeedRGBA) { context.setFillColor(color.cgColor); context.fill(CGRect(origin: .zero, size: size)) }

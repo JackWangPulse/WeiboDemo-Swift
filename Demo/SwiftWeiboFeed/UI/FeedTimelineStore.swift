@@ -65,7 +65,8 @@ final class FeedTimelineStore {
             content: nextIdentity,
             environment: records[index].expectedLayoutIdentity.environment
         )
-        records[index].prepared = nil
+        // Keep the collapsed prepared entry visible until the expanded layout is
+        // ready. This avoids replacing the cell with a placeholder or blank bitmap.
         return index
     }
 

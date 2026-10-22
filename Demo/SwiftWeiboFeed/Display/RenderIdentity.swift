@@ -3,8 +3,11 @@ import Foundation
 public enum RenderRegion: Hashable, Sendable {
     case headerBody
     case profile
+    case bodyStable
     case body
+    case repostStable
     case repost
+    case repostCard
     case card
     case tag
     case cardTag

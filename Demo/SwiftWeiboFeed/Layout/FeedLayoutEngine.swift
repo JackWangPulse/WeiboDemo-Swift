@@ -352,7 +352,18 @@ public final class FeedLayoutEngine: @unchecked Sendable {
             lineHeight: lineHeight
         )
         // 1. CoreText 的行和坐标 2. 正文整体位置 3. 链接和 More 的点击区域 4. 表情图片及位置
-        return TextLayout(storage: CoreTextLayoutStorage(lines: lines, origins: origins), bounds: bounds, regions: regions, attachments: attachments)
+        // The line containing the truncation token is intentionally mutable. Lines
+        // before it are pixel-identical after expansion and can keep their bitmap.
+        let stablePrefixLineCount = truncated
+            ? max(0, lines.count - 1)
+            : (lines.count > 6 ? min(5, lines.count) : 0)
+        return TextLayout(
+            storage: CoreTextLayoutStorage(lines: lines, origins: origins),
+            bounds: bounds,
+            regions: regions,
+            attachments: attachments,
+            stablePrefixLineCount: stablePrefixLineCount
+        )
     }
 
     private static let attachmentImageKey = NSAttributedString.Key("FeedEmoticonImage")

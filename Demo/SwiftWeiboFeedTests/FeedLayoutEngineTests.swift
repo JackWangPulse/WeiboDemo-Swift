@@ -136,6 +136,28 @@ final class FeedLayoutEngineTests: XCTestCase {
         assertFinite(layout)
     }
 
+    func testExpandedBodyKeepsCollapsedStablePrefixLines() async throws {
+        let item = try makeItem(text: String(repeating: "稳定前缀与新增尾部。", count: 80))
+        let parsed = FeedTextParser().parse(item.text)
+        let collapsed = try await FeedLayoutEngine().layout(
+            identity: contentIdentity(for: item), item: item, parsedBody: parsed,
+            parsedRepost: nil, environment: environment(), maximumBodyLines: 6
+        )
+        let expandedIdentity = FeedContentIdentity(itemID: item.id, contentVersion: 1)
+        let expanded = try await FeedLayoutEngine().layout(
+            identity: expandedIdentity, item: item, parsedBody: parsed,
+            parsedRepost: nil, environment: environment(), maximumBodyLines: nil
+        )
+
+        let collapsedPrefix = try XCTUnwrap(collapsed.body.stablePrefixFragment)
+        let expandedPrefix = try XCTUnwrap(expanded.body.stablePrefixFragment)
+        XCTAssertEqual(collapsed.body.stablePrefixLineCount, 5)
+        XCTAssertEqual(expanded.body.stablePrefixLineCount, 5)
+        XCTAssertEqual(collapsedPrefix.bounds, expandedPrefix.bounds)
+        XCTAssertEqual(collapsedPrefix.storage.origins, expandedPrefix.storage.origins)
+        XCTAssertGreaterThan(expanded.body.mutableTailFragment.bounds.height, collapsed.body.mutableTailFragment.bounds.height)
+    }
+
     @MainActor
     func testExpandingRepostUsesRepostIDAndRemovesItsLineLimit() async throws {
         let item = try makeItem(

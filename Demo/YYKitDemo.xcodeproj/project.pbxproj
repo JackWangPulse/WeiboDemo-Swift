@@ -65,7 +65,6 @@
 		B00000000000000000000001 /* WeiboUserPresentationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011 /* WeiboUserPresentationTests.swift */; };
 		B00000000000000000000002 /* WeiboUserPresentation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000012 /* WeiboUserPresentation.swift */; };
 		C00000000000000000000001 /* WeiboVisualMetrics.swift in Sources */ = {isa = PBXBuildFile; fileRef = C00000000000000000000011 /* WeiboVisualMetrics.swift */; };
-		F10000000000000000000001 /* SwiftWeiboFeedUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* SwiftWeiboFeedUITests.swift */; };
 		D9067DF11B975D3900F346EB /* YYTextExampleHelper.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF01B975D3900F346EB /* YYTextExampleHelper.m */; };
 		D9067DF41B9813B500F346EB /* YYTextEditExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF31B9813B500F346EB /* YYTextEditExample.m */; };
 		D9067DF71B9856FF00F346EB /* YYTextMarkdownExample.m in Sources */ = {isa = PBXBuildFile; fileRef = D9067DF61B9856FF00F346EB /* YYTextMarkdownExample.m */; };
@@ -251,6 +250,7 @@
 		D9CC99F91B8B568B00A9466D /* mew_interlaced.gif in Resources */ = {isa = PBXBuildFile; fileRef = D9CC99F31B8B568B00A9466D /* mew_interlaced.gif */; };
 		D9CC99FA1B8B568B00A9466D /* mew_interlaced.png in Resources */ = {isa = PBXBuildFile; fileRef = D9CC99F41B8B568B00A9466D /* mew_interlaced.png */; };
 		D9CC99FB1B8B568B00A9466D /* mew_baseline.png in Resources */ = {isa = PBXBuildFile; fileRef = D9CC99F51B8B568B00A9466D /* mew_baseline.png */; };
+		F10000000000000000000001 /* SwiftWeiboFeedUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F10000000000000000000011 /* SwiftWeiboFeedUITests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -278,8 +278,6 @@
 		A10000000000000000000014 /* TargetSmokeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TargetSmokeTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000015 /* XCTest.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = XCTest.framework; path = System/Library/Frameworks/XCTest.framework; sourceTree = SDKROOT; };
 		A10000000000000000000016 /* SwiftWeiboFeedTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftWeiboFeedTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
-		F10000000000000000000011 /* SwiftWeiboFeedUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftWeiboFeedUITests.swift; sourceTree = "<group>"; };
-		F10000000000000000000013 /* SwiftWeiboFeedUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftWeiboFeedUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		A20000000000000000000011 /* FeedFixtureLoader.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedFixtureLoader.swift; sourceTree = "<group>"; };
 		A20000000000000000000012 /* FeedModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModelsTests.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* FeedModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FeedModels.swift; sourceTree = "<group>"; };
@@ -639,6 +637,8 @@
 		D9CC99F31B8B568B00A9466D /* mew_interlaced.gif */ = {isa = PBXFileReference; lastKnownFileType = image.gif; path = mew_interlaced.gif; sourceTree = "<group>"; };
 		D9CC99F41B8B568B00A9466D /* mew_interlaced.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = mew_interlaced.png; sourceTree = "<group>"; };
 		D9CC99F51B8B568B00A9466D /* mew_baseline.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = mew_baseline.png; sourceTree = "<group>"; };
+		F10000000000000000000011 /* SwiftWeiboFeedUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftWeiboFeedUITests.swift; sourceTree = "<group>"; };
+		F10000000000000000000013 /* SwiftWeiboFeedUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SwiftWeiboFeedUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -655,13 +655,6 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000005 /* XCTest.framework in Frameworks */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		F10000000000000000000021 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -685,6 +678,13 @@
 				D9C786401AB7C69E001317AD /* Accelerate.framework in Frameworks */,
 				D9B263B91BEF66010038C00A /* MobileCoreServices.framework in Frameworks */,
 				D9C786441AB7C6D8001317AD /* SystemConfiguration.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000021 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -752,14 +752,6 @@
 				A20000000000000000000011 /* FeedFixtureLoader.swift */,
 			);
 			path = Fixtures;
-			sourceTree = "<group>";
-		};
-		F10000000000000000000020 /* SwiftWeiboFeedUITests */ = {
-			isa = PBXGroup;
-			children = (
-				F10000000000000000000011 /* SwiftWeiboFeedUITests.swift */,
-			);
-			path = SwiftWeiboFeedUITests;
 			sourceTree = "<group>";
 		};
 		A20000000000000000000027 /* Domain */ = {
@@ -839,12 +831,12 @@
 			path = Performance;
 			sourceTree = "<group>";
 		};
-		A20000000000000000000026 /* Fixtures */ = {
+		AC57B905303D9835009740F8 /* Recovered References */ = {
 			isa = PBXGroup;
 			children = (
-				A20000000000000000000011 /* FeedFixtureLoader.swift */,
+				A10000000000000000000015 /* XCTest.framework */,
 			);
-			path = Fixtures;
+			name = "Recovered References";
 			sourceTree = "<group>";
 		};
 		D9067E041B98A39200F346EB /* Feed List */ = {
@@ -1087,6 +1079,7 @@
 				D97484D219CAAD2900F46DE1 /* YYKitDemo */,
 				D974852319CAB3AE00F46DE1 /* Frameworks */,
 				D97484D119CAAD2900F46DE1 /* Products */,
+				AC57B905303D9835009740F8 /* Recovered References */,
 			);
 			sourceTree = "<group>";
 		};
@@ -1433,6 +1426,14 @@
 			path = Utility;
 			sourceTree = "<group>";
 		};
+		F10000000000000000000020 /* SwiftWeiboFeedUITests */ = {
+			isa = PBXGroup;
+			children = (
+				F10000000000000000000011 /* SwiftWeiboFeedUITests.swift */,
+			);
+			path = SwiftWeiboFeedUITests;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -1471,6 +1472,23 @@
 			productReference = A10000000000000000000016 /* SwiftWeiboFeedTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		D97484CF19CAAD2900F46DE1 /* YYKitDemo */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D97484F319CAAD2900F46DE1 /* Build configuration list for PBXNativeTarget "YYKitDemo" */;
+			buildPhases = (
+				D97484CC19CAAD2900F46DE1 /* Sources */,
+				D97484CD19CAAD2900F46DE1 /* Frameworks */,
+				D97484CE19CAAD2900F46DE1 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = YYKitDemo;
+			productName = YYKitDemo;
+			productReference = D97484D019CAAD2900F46DE1 /* YYKitDemo.app */;
+			productType = "com.apple.product-type.application";
+		};
 		F10000000000000000000030 /* SwiftWeiboFeedUITests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = F10000000000000000000050 /* Build configuration list for PBXNativeTarget "SwiftWeiboFeedUITests" */;
@@ -1489,23 +1507,6 @@
 			productReference = F10000000000000000000013 /* SwiftWeiboFeedUITests.xctest */;
 			productType = "com.apple.product-type.bundle.ui-testing";
 		};
-		D97484CF19CAAD2900F46DE1 /* YYKitDemo */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = D97484F319CAAD2900F46DE1 /* Build configuration list for PBXNativeTarget "YYKitDemo" */;
-			buildPhases = (
-				D97484CC19CAAD2900F46DE1 /* Sources */,
-				D97484CD19CAAD2900F46DE1 /* Frameworks */,
-				D97484CE19CAAD2900F46DE1 /* Resources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-			);
-			name = YYKitDemo;
-			productName = YYKitDemo;
-			productReference = D97484D019CAAD2900F46DE1 /* YYKitDemo.app */;
-			productType = "com.apple.product-type.application";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -1518,17 +1519,20 @@
 				TargetAttributes = {
 					A10000000000000000000030 = {
 						CreatedOnToolsVersion = 16.0;
+						ProvisioningStyle = Automatic;
 					};
 					A10000000000000000000031 = {
 						CreatedOnToolsVersion = 16.0;
-						TestTargetID = A10000000000000000000030;
-					};
-					F10000000000000000000030 = {
-						CreatedOnToolsVersion = 16.0;
+						ProvisioningStyle = Automatic;
 						TestTargetID = A10000000000000000000030;
 					};
 					D97484CF19CAAD2900F46DE1 = {
 						CreatedOnToolsVersion = 9.0;
+					};
+					F10000000000000000000030 = {
+						CreatedOnToolsVersion = 16.0;
+						ProvisioningStyle = Automatic;
+						TestTargetID = A10000000000000000000030;
 					};
 				};
 			};
@@ -1572,13 +1576,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		A10000000000000000000043 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		F10000000000000000000022 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -1632,6 +1629,13 @@
 				D9CC99FA1B8B568B00A9466D /* mew_interlaced.png in Resources */,
 				D98193311BC829F900BA0604 /* twitter_0.json in Resources */,
 				D9CC99F71B8B568B00A9466D /* mew_progressive.jpg in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		F10000000000000000000022 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1694,14 +1698,6 @@
 				AA0000000000000000000003 /* FeedPrefetchCoordinatorTests.swift in Sources */,
 				AF0000000000000000000001 /* WeiboResourceProviderTests.swift in Sources */,
 				B00000000000000000000001 /* WeiboUserPresentationTests.swift in Sources */,
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-		};
-		F10000000000000000000023 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-				F10000000000000000000001 /* SwiftWeiboFeedUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1839,6 +1835,14 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		F10000000000000000000023 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				F10000000000000000000001 /* SwiftWeiboFeedUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -1870,6 +1874,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = X262HQQZKN;
 				INFOPLIST_FILE = SwiftWeiboFeed/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -1889,6 +1894,7 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				CODE_SIGN_STYLE = Automatic;
+				DEVELOPMENT_TEAM = X262HQQZKN;
 				INFOPLIST_FILE = SwiftWeiboFeed/Resources/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -1936,42 +1942,6 @@
 				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SwiftWeiboFeed.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/SwiftWeiboFeed";
-			};
-			name = Release;
-		};
-		F10000000000000000000060 /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.SwiftWeiboFeedUITests;
-				PRODUCT_MODULE_NAME = SwiftWeiboFeedUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
-				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = SwiftWeiboFeed;
-			};
-			name = Debug;
-		};
-		F10000000000000000000061 /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				CODE_SIGN_STYLE = Automatic;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
-				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.SwiftWeiboFeedUITests;
-				PRODUCT_MODULE_NAME = SwiftWeiboFeedUITests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_TARGET_NAME = SwiftWeiboFeed;
 			};
 			name = Release;
 		};
@@ -2116,11 +2086,11 @@
 					"$(PROJECT_DIR)/**",
 					"\"$(SRCROOT)/../Vendor\"",
 				);
+				"GCC_PREPROCESSOR_DEFINITIONS[sdk=iphonesimulator*]" = "YYIMAGE_WEBP_ENABLED=0";
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
 					"$(PROJECT_DIR)/**",
 				);
-				"GCC_PREPROCESSOR_DEFINITIONS[sdk=iphonesimulator*]" = "YYIMAGE_WEBP_ENABLED=0";
 				INFOPLIST_FILE = YYKitDemo/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 12;
 				LD_RUNPATH_SEARCH_PATHS = "$(inherited) @executable_path/Frameworks";
@@ -2133,6 +2103,42 @@
 				PRODUCT_NAME = YYKitDemo;
 				STRIP_PNG_TEXT = NO;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		F10000000000000000000060 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.SwiftWeiboFeedUITests;
+				PRODUCT_MODULE_NAME = SwiftWeiboFeedUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SwiftWeiboFeed;
+			};
+			name = Debug;
+		};
+		F10000000000000000000061 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.ibireme.SwiftWeiboFeedUITests;
+				PRODUCT_MODULE_NAME = SwiftWeiboFeedUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = SwiftWeiboFeed;
 			};
 			name = Release;
 		};
@@ -2157,15 +2163,6 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
-		F10000000000000000000050 /* Build configuration list for PBXNativeTarget "SwiftWeiboFeedUITests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				F10000000000000000000060 /* Debug */,
-				F10000000000000000000061 /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Release;
-		};
 		D97484CB19CAAD2900F46DE1 /* Build configuration list for PBXProject "YYKitDemo" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -2180,6 +2177,15 @@
 			buildConfigurations = (
 				D97484F419CAAD2900F46DE1 /* Debug */,
 				D97484F519CAAD2900F46DE1 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		F10000000000000000000050 /* Build configuration list for PBXNativeTarget "SwiftWeiboFeedUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F10000000000000000000060 /* Debug */,
+				F10000000000000000000061 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

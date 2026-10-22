@@ -10,8 +10,10 @@ private actor FeedReprepareWorker {
         try Task.checkCancellation()
         try await startHook?(record)
         try Task.checkCancellation()
-        let parsed = FeedTextParser().parse(record.item.text)
-        let parsedRepost = record.item.repost.map { FeedTextParser().parse($0.text) }
+        // Expansion changes line limits, not source semantics. Reuse the parsed
+        // text retained by the old prepared entry whenever possible.
+        let parsed = record.prepared?.parsed ?? FeedTextParser().parse(record.item.text)
+        let parsedRepost = record.prepared?.parsedRepost ?? record.item.repost.map { FeedTextParser().parse($0.text) }
         try Task.checkCancellation()
         let layout = try await FeedLayoutEngine().layout(
             identity: record.identity,
